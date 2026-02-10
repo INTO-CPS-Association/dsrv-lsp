@@ -1,0 +1,15 @@
+[package]
+name = "DynSRV-lsp"
+version = "0.1.0"
+edition = "2024"
+
+[profile.dev]
+incremental = false
+
+[profile.release]
+incremental = false
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tower-lsp = "0.20.0"
+trustworthiness_checker = { git = "https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker", rev = "3405d3756f295090e27740b7b6df91e145dd251f" }
