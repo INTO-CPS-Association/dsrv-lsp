@@ -1,44 +1,17 @@
-use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::*;
-use tower_lsp::{Client, LanguageServer, LspService, Server};
-
-#[derive(Debug)]
-struct Backend {
-  client: Client,
-}
-
-#[tower_lsp::async_trait]
-impl LanguageServer for Backend {
-  async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
-    Ok(InitializeResult {
-      capabilities: ServerCapabilities {
-        hover_provider: Some(HoverProviderCapability::Simple(true)),
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
-        ..ServerCapabilities::default()
-      },
-      server_info: Some(ServerInfo {
-        name: "DynSRV Language Server".to_string(),
-        version: Some("0.1.0".to_string()),
-      }),
-    })
-  }
-  
-  async fn initialized(&self, _: InitializedParams) {
-    self.client.log_message(MessageType::INFO, "DynSRV Language Server initialized!").await;
-  }
-  
-  async fn shutdown(&self) -> Result<()> {
-    Ok(())
-  }
-  
-}
+use tower_lsp::{LspService, Server};
+use dynsrv_lsp::Backend;
 
 #[tokio::main]
 async fn main() {
+  tracing_subscriber::fmt()
+      .with_max_level(tracing::Level::INFO)
+      .init();
+
+  
   let stdin = tokio::io::stdin();
   let stdout = tokio::io::stdout();
   
-  let (service, socket) = LspService::new(|client| Backend { client });
+  let (service, socket) = LspService::build(|client| {Backend::new(client)}).finish();
   Server::new(stdin, stdout, socket).serve(service).await;
 }
   

@@ -8,6 +8,8 @@ version = "0.1.0"
 dependencies = [
  "tokio",
  "tower-lsp",
+ "tracing",
+ "tracing-subscriber",
  "trustworthiness_checker",
 ]
 
