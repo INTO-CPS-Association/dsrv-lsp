@@ -1,20 +1,21 @@
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use crate::analyzer::Analysis;
+use crate::analyzer::{Analysis, analyze};
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 pub struct Backend {
     pub client: Client,
-    pub current_analysis: Arc<RwLock<Option<Analysis>>>,
+    pub current_analysis: RwLock<HashMap<Url, Analysis>>,
 }
 
 impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            current_analysis: Arc::new(RwLock::new(None)),
+            current_analysis: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -46,7 +47,22 @@ impl LanguageServer for Backend {
         Ok(())
     }
     
+    async fn did_open(&self, params: DidOpenTextDocumentParams){
+      let uri = params.text_document.uri;
+      
+        if let Ok(_path) = uri.to_file_path(){
 
+        self.client.log_message(MessageType::INFO, format!("Analyzing document `{}`", uri)).await;
+        let uri = uri;
+        let text = params.text_document.text;
+        let analysis = analyze(&text).await;
+        
+        self.current_analysis.write().unwrap().insert(uri.clone(), analysis.clone());
+        
+        self.client.publish_diagnostics(uri, analysis.diags, None).await;
+        self.client.log_message(MessageType::INFO, "Document opened and analyzed").await;      
+        }
+  }
 }
 
 
