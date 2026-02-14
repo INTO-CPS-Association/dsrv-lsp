@@ -1,6 +1,7 @@
 use tower_lsp::{LspService, Server};
 use dynsrv_lsp::Backend;
 
+
 #[tokio::main]
 async fn main() {
   tracing_subscriber::fmt()
