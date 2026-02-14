@@ -36,7 +36,7 @@ impl LanguageServer for Backend {
             },
         })
     }
-
+    
     async fn initialized(&self, _: InitializedParams) {
         self.client
             .log_message(MessageType::INFO, "DynSRV Language Server initialized!")
@@ -45,5 +45,13 @@ impl LanguageServer for Backend {
     async fn shutdown(&self) -> Result<()> {
         Ok(())
     }
+    
+
 }
+
+
+// struct TextDocumentChange<'a> {
+//   uri: String,
+//   text: &'a str,
+// }
 
