@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 use crate::analyzer::{Analysis, analyze};
 use tower_lsp::jsonrpc::Result;
@@ -37,7 +37,7 @@ impl LanguageServer for Backend {
             },
         })
     }
-    
+
     async fn initialized(&self, _: InitializedParams) {
         self.client
             .log_message(MessageType::INFO, "DynSRV Language Server initialized!")
@@ -46,28 +46,47 @@ impl LanguageServer for Backend {
     async fn shutdown(&self) -> Result<()> {
         Ok(())
     }
-    
-    async fn did_open(&self, params: DidOpenTextDocumentParams){
-      let uri = params.text_document.uri;
-      
-        if let Ok(_path) = uri.to_file_path(){
 
-        self.client.log_message(MessageType::INFO, format!("Analyzing document `{}`", uri)).await;
-        let uri = uri;
-        let text = params.text_document.text;
-        let analysis = analyze(&text).await;
-        
-        self.current_analysis.write().unwrap().insert(uri.clone(), analysis.clone());
-        
-        self.client.publish_diagnostics(uri, analysis.diags, None).await;
-        self.client.log_message(MessageType::INFO, "Document opened and analyzed").await;      
+    // Handle the `textDocument/didOpen` notification
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let uri = params.text_document.uri;
+
+        if let Ok(_path) = uri.to_file_path() {
+            self.client
+                .log_message(MessageType::INFO, format!("Analyzing document `{}`", uri))
+                .await;
+            let uri = uri;
+            let text = params.text_document.text;
+
+            //Variable to hold multiple diagnostics for the entire document
+
+            let analysis = analyze(&text).await;
+
+            if !analysis.diags.is_empty() {
+                self.client
+                    .log_message(
+                        MessageType::INFO,
+                        format!("Diagnostics for line: {:?}", analysis.diags),
+                    )
+                    .await;
+
+                self.current_analysis
+                    .write()
+                    .unwrap()
+                    .insert(uri.clone(), analysis.clone());
+                self.client
+                    .publish_diagnostics(uri.clone(), analysis.diags, None)
+                    .await;
+            }
+            //Log diagnostics in output console
+            self.client
+                .log_message(MessageType::INFO, "Document opened and analyzed")
+                .await;
         }
-  }
+    }
 }
-
 
 // struct TextDocumentChange<'a> {
 //   uri: String,
 //   text: &'a str,
 // }
-
