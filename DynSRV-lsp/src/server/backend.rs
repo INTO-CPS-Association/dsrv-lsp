@@ -11,15 +11,6 @@ pub struct Backend {
     pub current_analysis: RwLock<HashMap<Url, Analysis>>,
 }
 
-impl Backend {
-    pub fn new(client: Client) -> Self {
-        Self {
-            client,
-            current_analysis: RwLock::new(HashMap::new()),
-        }
-    }
-}
-
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -50,43 +41,58 @@ impl LanguageServer for Backend {
     // Handle the `textDocument/didOpen` notification
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
+        self.change(uri, &params.text_document.text).await;
+    }
+    
+    async fn did_change(&self, params: DidChangeTextDocumentParams){
+        let uri = params.text_document.uri;
+        self.change(uri, &params.content_changes[0].text).await;
+    }
+    
+    async fn did_save(&self, _params: DidSaveTextDocumentParams) {
+      log::debug!("File Saved");
+    }
+    
+    async fn did_close(&self, _params: DidCloseTextDocumentParams) {
+    log::debug!("File Closed");
+    } 
+} 
 
-        if let Ok(_path) = uri.to_file_path() {
-            self.client
-                .log_message(MessageType::INFO, format!("Analyzing document `{}`", uri))
-                .await;
-            let uri = uri;
-            let text = params.text_document.text;
-
-            //Variable to hold multiple diagnostics for the entire document
-
-            let analysis = analyze(&text).await;
-
-            if !analysis.diags.is_empty() {
+impl Backend {
+    pub fn new(client: Client) -> Self {
+        Self {
+            client,
+            current_analysis: RwLock::new(HashMap::new()),
+        }
+    }
+    async fn change(&self, uri: Url, text: &String) {
+        match uri.to_file_path() {
+            Ok(_path) => {
+              self.client.log_message(MessageType::INFO, format!("Analyzing document `{}`", uri)).await;
+              
+              let analysis = analyze(&text).await;
+              if !analysis.diags.is_empty() {
+                // self.client.log_message(MessageType::INFO, format!("Diagnostics for line: {:?}", analysis.diags)).await;
+              
+              self.current_analysis.write().unwrap().insert(uri.clone(), analysis.clone());
+            }
+            self.client.publish_diagnostics(uri.clone(), analysis.diags, None).await;
+              
+            }
+            Err(_path) => {
                 self.client
                     .log_message(
                         MessageType::INFO,
-                        format!("Diagnostics for line: {:?}", analysis.diags),
+                        format!("Failed to convert URI `{}` to file path", uri),
                     )
                     .await;
-
-                self.current_analysis
-                    .write()
-                    .unwrap()
-                    .insert(uri.clone(), analysis.clone());
-                self.client
-                    .publish_diagnostics(uri.clone(), analysis.diags, None)
-                    .await;
             }
-            //Log diagnostics in output console
-            self.client
-                .log_message(MessageType::INFO, "Document opened and analyzed")
-                .await;
         }
+
+        //     //Log diagnostics in output console
+        //     self.client
+        //         .log_message(MessageType::INFO, "Document opened and analyzed")
+        //         .await;
+        // }
     }
 }
-
-// struct TextDocumentChange<'a> {
-//   uri: String,
-//   text: &'a str,
-// }

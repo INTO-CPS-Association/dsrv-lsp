@@ -13,12 +13,13 @@ path = "src/lib.rs"
 
 
 [dependencies]
+log = "0.4.29"
 regex = "1.12.3"
 ropey = "1.6.1"
 tokio = { version = "1", features = ["full"] }
 tower-lsp = "0.20.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-trustworthiness_checker = { git = "https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker", rev = "3405d3756f295090e27740b7b6df91e145dd251f" }
+trustworthiness_checker = { git = "https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker", version = "0.1.0" }
 
 

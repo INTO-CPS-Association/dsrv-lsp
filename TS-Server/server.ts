@@ -27,7 +27,7 @@ export async function validateDynSRVFile(filePath: string) {
   const wslFilepath = toWslPath(filePath);
   const dummyInput = "/mnt/c/Users/emili/OneDrive/Universitet/6_Semester/Bachelor_Project/dynsrv-vscode/src/server/TS-server/dummy.input";
   const parserLoc = "~/projects/robosapiens-trustworthiness-checker/target/release/trustworthiness_checker";
-  const command = `${parserLoc} --parser-mode combinator --language dynsrv --input-file ${dummyInput} ${wslFilepath}`;
+  const command = `${parserLoc} --parser-mode lalr --language dynsrv --input-file ${dummyInput} ${wslFilepath}`;
 
 
   try {
