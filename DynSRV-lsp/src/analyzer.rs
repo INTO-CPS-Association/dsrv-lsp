@@ -3,35 +3,16 @@ use tower_lsp::lsp_types::*;
 use trustworthiness_checker::lang::dynamic_lola::ast::LOLASpecification;
 use trustworthiness_checker::lang::dynamic_lola::lalr_parser::parse_str as lalr_parse_file; // Model // Parser
 // use trustworthiness_checker::lang::dynamic_lola::parser::lola_specification;
-use ropey::Rope;
-use trustworthiness_checker::lang::dynamic_lola::type_checker::{
-    SemanticError, TypedLOLASpecification,
-};
+use trustworthiness_checker::lang::dynamic_lola::type_checker::TypedLOLASpecification;
 
 pub struct Analysis {
-    pub spec: Option<LOLASpecification>,
-    pub typed: Option<TypedLOLASpecification>,
-    pub diags: Vec<Diagnostic>,
+    pub spec: Option<LOLASpecification>, // The parsed specification, if parsing was successful
+    pub typed: Option<TypedLOLASpecification>, //For future use, when type checker is implemented
+    pub diags: Vec<Diagnostic>,          // Diagnostics from both syntax and semantic analysis
 }
 
 impl Analysis {
-    pub fn semantics_to_diagnostics(errors: &[SemanticError]) -> Vec<Diagnostic> {
-        errors
-            .iter()
-            .map(|error| Diagnostic {
-                range: Range::default(),
-                severity: Some(match error {
-                    SemanticError::TypeError(_) => DiagnosticSeverity::ERROR,
-                    SemanticError::DeferredError(_) => DiagnosticSeverity::WARNING,
-                    SemanticError::UndeclaredVariable(_) => DiagnosticSeverity::ERROR,
-                }),
-                code: Some(NumberOrString::String(error_code(error).to_string())),
-                message: format_error_message(error),
-                source: Some("lola-type-checker".to_string()),
-                ..Default::default()
-            })
-            .collect()
-    }
+    // Create Clone function for Analysis struct
     pub fn clone(&self) -> Self {
         Self {
             spec: self.spec.clone(),
@@ -39,116 +20,90 @@ impl Analysis {
             diags: self.diags.clone(),
         }
     }
-}
 
-// Function to analyze the lines of the document and return diagnostics
-pub async fn analyze(text: &str) -> Analysis {
-    match lalr_parse_file(text) {
-        Ok(spec) => Analysis {
-            spec: Some(spec),
-            typed: None,
-            diags: vec![],
-        },
-
-        Err(_parse_error) => {
-            let mut diagnostics: Vec<Diagnostic> = Vec::new();
-
-            for (linenum, line) in text.lines().enumerate() {
-                match lalr_parse_file(line) {
-                    Ok(_spec) => {
-                        // Success on individual line, continue
-                    }
-                    Err(error) => {
-                        let msg_line = format!("{:?}", error);
-                        let rope = Rope::from_str(&line);
-                        let range = extract_range_from_error(&msg_line, &rope).unwrap_or_default();
-
-                        //extract info from msg_line
-                        // log::info!("{}", msg_line);
-                        
-                        let lines = msg_line.lines();
-
-                        let error_line = lines.clone().nth(3).unwrap_or_default().split(" found ");
-                        let error_msg = "Syntax error: ".to_string()
-                            + error_line.clone().nth(0).unwrap_or_default().trim_start();
-
-                        let diag = Diagnostic {
-                            range: Range::new(
-                                Position::new(linenum as u32, range.start.character - 1),
-                                Position::new(linenum as u32, range.end.character - 1),
-                            ),
-                            severity: Some(DiagnosticSeverity::ERROR),
-                            message: error_msg,
-                            source: Some("DynSRV".into()),
-                            ..Default::default()
-                        };
-
-                        diagnostics.push(diag);
-                    }
+    pub async fn analyze(text: &str) -> Analysis {
+        match lalr_parse_file(text) {
+            Ok(spec) => {
+                //Found no syntax error in the code return empty diagnostics
+                Analysis {
+                    spec: Some(spec),
+                    typed: None,
+                    diags: vec![],
                 }
             }
 
-            // let msg = format!("{:?}", parse_error);
-            // let rope = Rope::from_str(&text);
-            // let range = extract_range_from_error(&msg, &rope).unwrap_or_default();
-            Analysis {
-                spec: None,
-                typed: None,
-                diags: diagnostics, // vec![Diagnostic {
-                                    //     range: range,
-                                    //     severity: Some(DiagnosticSeverity::ERROR),
-                                    //     message: format!("Syntax error: {:?}", parse_error),
-                                    //     source: Some("lola-parser".into()),
-                                    //     ..Default::default()
-                                    // }],
+            Err(_parse_error) => {
+                //Found at least one error in the code, checking the code again for more errors by running each line individual
+                let mut more_diags: Vec<Diagnostic> = Vec::new();
+
+                for (line_num, line) in text.lines().enumerate() {
+                    //Running each line of the input code
+                    match lalr_parse_file(line) {
+                        Ok(_spec) => {
+                            //No errors on this line, running next line
+                        }
+
+                        Err(error) => {
+                            //Error found on line, creating error message and diagnostic to return to the client
+                            let msg = format!("{:?}", error); // Convert the error to a string
+
+                            //Extract Range from the error message using regex
+                            let range =
+                                Analysis::extract_range_from_error(&msg).unwrap_or_default();
+
+                            let error_message = Analysis::contruct_error_message(&msg);
+                            
+                            //Add the diagnostic to the vector
+                            more_diags.push(Diagnostic {
+                                range: Range::new(
+                                    Position::new(line_num as u32, range.start.character),
+                                    Position::new(line_num as u32, range.end.character),
+                                ),
+                                severity: Some(DiagnosticSeverity::ERROR),
+                                source: Some("DSRV".into()),
+                                message: error_message,
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
+                
+                //Return the diagnostics to the client
+                Analysis {
+                    spec: None,
+                    typed: None,
+                    diags: more_diags,
+                }
             }
         }
     }
-}
 
-fn error_code(error: &SemanticError) -> &'static str {
-    match error {
-        SemanticError::TypeError(_) => "E001",
-        SemanticError::DeferredError(_) => "E002",
-        SemanticError::UndeclaredVariable(_) => "E003",
+    fn extract_range_from_error(msg: &str) -> Option<Range> {
+        //Construct the regex pattern to extract the line and column numbers from the error message
+        let re = Regex::new(r"found at line (\d+), column (\d+):line (\d+), column (\d+)").ok()?;
+        //Get the numbers from the error message using regex
+        let cap = re.captures(msg)?;
+
+        // Parse the captured groups into u32 values for line and column numbers
+        let line_start: u32 = cap.get(1)?.as_str().parse().ok()?;
+        let char_start: u32 = cap.get(2)?.as_str().parse().ok()?;
+        let line_end: u32 = cap.get(3)?.as_str().parse().ok()?;
+        let char_end: u32 = cap.get(4)?.as_str().parse().ok()?;
+
+        //Create the Range object using the extracted line and column numbers, adjusting for zero-based indexing
+        Some(Range::new(
+            Position::new(line_start - 1, char_start - 1),
+            Position::new(line_end - 1, char_end - 1),
+        ))
     }
-}
 
-fn format_error_message(error: &SemanticError) -> String {
-    match error {
-        SemanticError::TypeError(msg) => format!("Type Error: {}", msg),
-        SemanticError::DeferredError(msg) => format!("Deferred Error: {}", msg),
-        SemanticError::UndeclaredVariable(var) => format!("Undeclared Variable: {}", var),
+    fn contruct_error_message(msg: &str) -> String {
+        let mut lines = msg.lines();
+
+        let mut l = lines.nth(3).unwrap_or_default().split(" found ");
+        format!(
+            "Syntax error: {:?}",
+            l.nth(0).unwrap_or_default().trim_start()
+        )
     }
-}
-
-// Credit to github user: IWANABETHATGUY for the following functions to extract error locations from the parser error messages.
-// Found in https://github.com/IWANABETHATGUY/tower-lsp-boilerplate/src/main.rs lines 805-810 for the `offset_to_pos` function and lines 812-816 for the `pos_to_offset` function.
-fn offset_to_pos(offset: usize, rope: &Rope) -> Option<Position> {
-    let line = rope.try_char_to_line(offset).ok()?;
-    let first_char_line = rope.try_line_to_char(line).ok()?;
-    let column = offset - first_char_line;
-    Some(Position::new(line as u32, column as u32))
-}
-
-// fn pos_to_offset(position: Position, rope: &Rope) -> Option<usize> {
-//     let line_char_offset = rope.try_line_to_char(position.line as usize).ok()?;
-//     let slice = rope.slice(0..line_char_offset + position.character as usize);
-//     Some(slice.len_bytes())
-// }
-
-// Helper function for extracting error locations from the parser error messages. It uses a regular expression to find the character offsets in the error message and converts them to LSP positions using the `offset_to_pos` function.
-fn extract_range_from_error(msg: &str, rope: &Rope) -> Option<Range> {
-    //Create string to look for in the error message
-    let re = Regex::new(r"found at line (\d+), column (\d+):line (\d+), column (\d+)").ok()?;
-    let cap = re.captures(msg)?;
-
-    //Only get char loc
-    let char_start: usize = cap.get(2)?.as_str().parse().ok()?;
-    let char_end: usize = cap.get(4)?.as_str().parse().ok()?;
-    
-    Some(Range::new(
-        offset_to_pos(char_start, rope)?,
-        offset_to_pos(char_end, rope)?,
-    ))
 }

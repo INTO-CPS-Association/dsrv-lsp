@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use crate::analyzer::{Analysis, analyze};
+use crate::analyzer::Analysis;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
@@ -70,7 +70,7 @@ impl Backend {
             Ok(_path) => {
               self.client.log_message(MessageType::INFO, format!("Analyzing document `{}`", uri)).await;
               
-              let analysis = analyze(&text).await;
+              let analysis = Analysis::analyze(&text).await;
               if !analysis.diags.is_empty() {
                 // self.client.log_message(MessageType::INFO, format!("Diagnostics for line: {:?}", analysis.diags)).await;
               

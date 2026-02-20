@@ -25,9 +25,9 @@ function toWslPath(winPath: string): string {
 // Exported function to be used in the VSCode extension
 export async function validateDynSRVFile(filePath: string) {
   const wslFilepath = toWslPath(filePath);
-  const dummyInput = "/mnt/c/Users/emili/OneDrive/Universitet/6_Semester/Bachelor_Project/dynsrv-vscode/src/server/TS-server/dummy.input";
+  const dummyInput = "/home/emili/projects/dynsrv-vscode/server/TS-Server/dummy.input";
   const parserLoc = "~/projects/robosapiens-trustworthiness-checker/target/release/trustworthiness_checker";
-  const command = `${parserLoc} --parser-mode lalr --language dynsrv --input-file ${dummyInput} ${wslFilepath}`;
+  const command = `${parserLoc} --parser lalr --language dsrv --input-file ${dummyInput} ${wslFilepath}`;
 
 
   try {
