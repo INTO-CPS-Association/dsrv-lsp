@@ -70,7 +70,7 @@ impl Backend {
             Ok(_path) => {
               self.client.log_message(MessageType::INFO, format!("Analyzing document `{}`", uri)).await;
               
-              let analysis = Analysis::analyze(&text).await;
+              let analysis = Analysis::analyze_2_point_0(&text).await;
               if !analysis.diags.is_empty() {
                 // self.client.log_message(MessageType::INFO, format!("Diagnostics for line: {:?}", analysis.diags)).await;
               
