@@ -13,6 +13,7 @@ path = "src/lib.rs"
 
 
 [dependencies]
+lalrpop-util = "0.23.0"
 log = "0.4.29"
 regex = "1.12.3"
 ropey = "1.6.1"

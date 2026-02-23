@@ -1,7 +1,8 @@
 use regex::Regex;
+use lalrpop_util::ParseError;
 use tower_lsp::lsp_types::*;
 use trustworthiness_checker::lang::dynamic_lola::ast::LOLASpecification;
-use trustworthiness_checker::lang::dynamic_lola::lalr_parser::parse_str as lalr_parse_file; // Model // Parser
+use trustworthiness_checker::lang::dynamic_lola::lalr_parser;
 // use trustworthiness_checker::lang::dynamic_lola::parser::lola_specification;
 use trustworthiness_checker::lang::dynamic_lola::type_checker::TypedLOLASpecification;
 
@@ -22,7 +23,7 @@ impl Analysis {
     }
 
     pub async fn analyze(text: &str) -> Analysis {
-        match lalr_parse_file(text) {
+        match lalr_parser::parse_str(text) {
             Ok(spec) => {
                 //Found no syntax error in the code return empty diagnostics
                 Analysis {
