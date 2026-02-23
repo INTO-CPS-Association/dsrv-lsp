@@ -48,6 +48,7 @@ function getDiagnostics(stderr: string): Diagnostic[] {
 
   const errorRegex = /\d+:\s+(.*)\s+found at (\d+):(\d+)/g;
   let match;
+  
 
   while ((match = errorRegex.exec(stderr)) !== null) {
     const line = parseInt(match[1]) - 1;

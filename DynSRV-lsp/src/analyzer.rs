@@ -32,48 +32,61 @@ impl Analysis {
                 }
             }
 
-            Err(_parse_error) => {
-                //Found at least one error in the code, checking the code again for more errors by running each line individual
-                let mut more_diags: Vec<Diagnostic> = Vec::new();
+            Err(parse_error) => {
+              //Returned to only parsing one line for now
+                let range = Analysis::extract_range_from_error(&(format!("{:?}", parse_error)))
+                    .unwrap_or_default();
+                  log::info!("{:?}", range);
 
-                for (line_num, line) in text.lines().enumerate() {
-                    //Running each line of the input code
-                    match lalr_parse_file(line) {
-                        Ok(_spec) => {
-                            //No errors on this line, running next line
-                        }
-
-                        Err(error) => {
-                            //Error found on line, creating error message and diagnostic to return to the client
-                            let msg = format!("{:?}", error); // Convert the error to a string
-
-                            //Extract Range from the error message using regex
-                            let range =
-                                Analysis::extract_range_from_error(&msg).unwrap_or_default();
-
-                            let error_message = Analysis::contruct_error_message(&msg);
-                            
-                            //Add the diagnostic to the vector
-                            more_diags.push(Diagnostic {
-                                range: Range::new(
-                                    Position::new(line_num as u32, range.start.character),
-                                    Position::new(line_num as u32, range.end.character),
-                                ),
-                                severity: Some(DiagnosticSeverity::ERROR),
-                                source: Some("DSRV".into()),
-                                message: error_message,
-                                ..Default::default()
-                            });
-                        }
-                    }
-                }
-                
-                //Return the diagnostics to the client
                 Analysis {
                     spec: None,
                     typed: None,
-                    diags: more_diags,
+                    diags: vec![Diagnostic {
+                        range: range,
+                        severity: Some(DiagnosticSeverity::ERROR),
+                        source: Some("DSRV".into()),
+                        message: parse_error.to_string(),
+                        ..Default::default()
+                    }],
                 }
+
+                // Removed the code checking each line for errors, to ensure only actual errors are reported to the client, even if its only the one
+                // //Found at least one error in the code, checking the code again for more errors by running each line individual
+                // let mut more_diags: Vec<Diagnostic> = Vec::new();
+
+                // for (line_num, line) in text.lines().enumerate() {
+                //     //Running each line of the input code
+                //     match lalr_parse_file(line) {
+                //         Ok(_spec) => {
+                //             //No errors on this line, running next line
+                //         }
+
+                //         Err(error) => {
+                //             //Error found on line, creating error message and diagnostic to return to the client
+                //             let msg = format!("{:?}", error); // Convert the error to a string
+
+                //             //Extract Range from the error message using regex
+                //             let range =
+                //                 Analysis::extract_range_from_error(&msg).unwrap_or_default();
+
+                //             let error_message = Analysis::contruct_error_message(&msg);
+
+                //             //Add the diagnostic to the vector
+                //             more_diags.push(Diagnostic {
+                //                 range: Range::new(
+                //                     Position::new(line_num as u32, range.start.character),
+                //                     Position::new(line_num as u32, range.end.character),
+                //                 ),
+                //                 severity: Some(DiagnosticSeverity::ERROR),
+                //                 source: Some("DSRV".into()),
+                //                 message: error_message,
+                //                 ..Default::default()
+                //             });
+                //         }
+                //     }
+                // }
+
+                // //Return the diagnostics to the client
             }
         }
     }
