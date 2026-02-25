@@ -32,8 +32,11 @@ impl Analysis {
             },
 
             Err(error) => {
+              // Map the error's byte positions to line and column positions in the text_document immediately.
                 let error = error.map_location(|byte| Analysis::byte_to_pos(text, byte));
 
+                
+                // Convert the parse error into a diagnostic message with a range indicating where the error occurred in the source code
                 let diags = match error {
                     ParseError::InvalidToken { location } => {
                         let range =
@@ -73,7 +76,8 @@ impl Analysis {
                         Self::create_diag(&format!("User error: {:?}", error), Range::new(p, p))
                     }
                 };
-
+                
+                // Return the analysis result with the diagnostic message
                 Analysis {
                     spec: None,
                     typed: None,
@@ -82,7 +86,9 @@ impl Analysis {
             }
         }
     }
-
+    
+    
+    //Helper function to create a diagnostic with a given message and range
     fn create_diag(msg: &str, range: Range) -> Diagnostic {
         Diagnostic {
             range: range,
