@@ -1,5 +1,6 @@
 use lalrpop_util::ParseError;
 use ropey::Rope;
+use crate::utils::byte_to_pos;
 use tower_lsp::lsp_types::*;
 use trustworthiness_checker::lang::dynamic_lola::ast::LOLASpecification;
 use trustworthiness_checker::lang::dynamic_lola::lalr::TopDeclsParser;
@@ -33,7 +34,7 @@ impl Analysis {
 
             Err(error) => {
               // Map the error's byte positions to line and column positions in the text_document immediately.
-                let error = error.map_location(|byte| Analysis::byte_to_pos(text, byte));
+                let error = error.map_location(|byte| byte_to_pos(&Rope::from_str(text), byte));
 
                 
                 // Convert the parse error into a diagnostic message with a range indicating where the error occurred in the source code
@@ -128,88 +129,6 @@ impl Analysis {
     //     )
     // }
 
-    fn byte_to_pos(text: &str, byte: usize) -> Option<Position> {
-        let rope = Rope::from_str(text);
-        let line = rope.byte_to_line(byte);
-        let line_start = rope.line_to_byte(line);
 
-        let col = byte - line_start;
-
-        Some(Position::new(line as u32, col as u32))
-    }
 }
 
-// let line = rope.try_char_to_line(offset).ok()?;
-// let first_char_of_line = rope.try_line_to_char(line).ok()?;
-// let column = offset - first_char_of_line;
-// Some(Position::new(line as u32, column as u32))
-
-// pub async fn analyze(text: &str) -> Analysis {
-//     match lalr_parser::parse_str(text) {
-//         Ok(spec) => {
-//             //Found no syntax error in the code return empty diagnostics
-//             Analysis {
-//                 spec: Some(spec),
-//                 typed: None,
-//                 diags: vec![],
-//             }
-//         }
-
-//         Err(parse_error) => {
-//           //Returned to only parsing one line for now
-//             let range = Analysis::extract_range_from_error(&(format!("{:?}", parse_error)))
-//                 .unwrap_or_default();
-//               log::info!("{:?}", range);
-
-//             Analysis {
-//                 spec: None,
-//                 typed: None,
-//                 diags: vec![Diagnostic {
-//                     range: range,
-//                     severity: Some(DiagnosticSeverity::ERROR),
-//                     source: Some("DSRV".into()),
-//                     message: parse_error.to_string(),
-//                     ..Default::default()
-//                 }],
-//             }
-
-//             // Removed the code checking each line for errors, to ensure only actual errors are reported to the client, even if its only the one
-//             // //Found at least one error in the code, checking the code again for more errors by running each line individual
-//             // let mut more_diags: Vec<Diagnostic> = Vec::new();
-
-//             // for (line_num, line) in text.lines().enumerate() {
-//             //     //Running each line of the input code
-//             //     match lalr_parse_file(line) {
-//             //         Ok(_spec) => {
-//             //             //No errors on this line, running next line
-//             //         }
-
-//             //         Err(error) => {
-//             //             //Error found on line, creating error message and diagnostic to return to the client
-//             //             let msg = format!("{:?}", error); // Convert the error to a string
-
-//             //             //Extract Range from the error message using regex
-//             //             let range =
-//             //                 Analysis::extract_range_from_error(&msg).unwrap_or_default();
-
-//             //             let error_message = Analysis::contruct_error_message(&msg);
-
-//             //             //Add the diagnostic to the vector
-//             //             more_diags.push(Diagnostic {
-//             //                 range: Range::new(
-//             //                     Position::new(line_num as u32, range.start.character),
-//             //                     Position::new(line_num as u32, range.end.character),
-//             //                 ),
-//             //                 severity: Some(DiagnosticSeverity::ERROR),
-//             //                 source: Some("DSRV".into()),
-//             //                 message: error_message,
-//             //                 ..Default::default()
-//             //             });
-//             //         }
-//             //     }
-//             // }
-
-//             // //Return the diagnostics to the client
-//         }
-//     }
-// }

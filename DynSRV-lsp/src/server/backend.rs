@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::sync::RwLock;
-
 use crate::analyzer::Analysis;
+use dashmap::DashMap;
+use ropey::Rope;
+use std::ops::Range;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
