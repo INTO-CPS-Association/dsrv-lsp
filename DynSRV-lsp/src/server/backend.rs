@@ -85,8 +85,8 @@ impl Backend {
                 // If URI is successfully converted to file path, proceed with analysis
                 self.logger(format!("Analyzing document `{}`", uri), MessageType::INFO)
                     .await;
-              
-              let analysis = Analysis::analyze_2_point_0(&text).await;
+
+                let analysis = Analysis::analyze_2_point_0(&text).await;
                 for diag in analysis.clone().diags{
                   diags.push(diag);
                 }
@@ -95,9 +95,8 @@ impl Backend {
                 // Only Update the symbol map if AST is valid
                 if analysis.spec.is_some() {
                     self.analysis_map.insert(uri.to_string(), analysis.clone());
-            }
-            self.client.publish_diagnostics(uri.clone(), analysis.diags, None).await;
-              
+                }
+
                 self.client
                     .publish_diagnostics(uri.clone(), diags, None)
                     .await;
@@ -105,10 +104,10 @@ impl Backend {
             Err(_path) => {
                 // If URI conversion fails, log an error message and skip analysis
                 self.logger(
-                        format!("Failed to convert URI `{}` to file path", uri),
+                    format!("Failed to convert URI `{}` to file path", uri),
                     MessageType::ERROR,
-                    )
-                    .await;
+                )
+                .await;
             }
         }
 
