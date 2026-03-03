@@ -184,7 +184,7 @@ pub enum Token {
     IntLiteral(i64),
     #[regex(r"-?\d+\.\d+", |lex| lex.slice().parse::<f64>().ok())]
     FloatLiteral(f64),
-    #[regex(r"\s+", logos::skip)]
+    #[regex(r"\s+")]
     Whitespace,
     Error,
 }
