@@ -1,0 +1,96 @@
+use tower_lsp::LanguageServer;
+use tower_lsp::lsp_types::*;
+use crate::server::backend::Backend;
+use tower_lsp::jsonrpc::Result;
+
+#[tower_lsp::async_trait]
+impl LanguageServer for Backend {
+    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+        Ok(InitializeResult {
+            server_info: Some(ServerInfo {
+                name: "DynSRV Language Server".to_string(),
+                version: Some("0.1.0".to_string()),
+            }),
+
+            capabilities: ServerCapabilities {
+                text_document_sync: Some(TextDocumentSyncCapability::Options(
+                    TextDocumentSyncOptions {
+                        open_close: Some(true),
+                        change: Some(TextDocumentSyncKind::FULL),
+                        save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
+                            include_text: Some(true),
+                        })),
+                        ..Default::default()
+                    },
+                )),
+                completion_provider: Some(CompletionOptions {
+                    resolve_provider: Some(false),
+                    trigger_characters: Some(vec![".".to_string()]),
+                    all_commit_characters: None,
+                    completion_item: None,
+                    work_done_progress_options: Default::default(),
+                }),
+
+                hover_provider: Some(HoverProviderCapability::Options(HoverOptions {
+                    ..Default::default()
+                })),
+
+                definition_provider: Some(OneOf::Left(true)),
+                declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
+                    work_done_progress_options: Default::default(),
+                })),
+                execute_command_provider: Some(ExecuteCommandOptions {
+                    ..Default::default()
+                }),
+
+                ..ServerCapabilities::default()
+            },
+        })
+    }
+
+    async fn initialized(&self, _: InitializedParams) {
+        self.client
+            .log_message(MessageType::INFO, "DynSRV Language Server initialized!")
+            .await;
+    }
+    async fn shutdown(&self) -> Result<()> {
+        Ok(())
+    }
+
+    // Handle the `textDocument/didOpen` notification
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let uri = params.text_document.uri;
+        self.change(uri, &params.text_document.text).await;
+    }
+
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        let uri = params.text_document.uri;
+        self.change(uri, &params.content_changes[0].text).await;
+    }
+
+    async fn did_save(&self, _params: DidSaveTextDocumentParams) {
+        log::debug!("File Saved");
+    }
+
+    async fn did_close(&self, _params: DidCloseTextDocumentParams) {
+        log::debug!("File Closed");
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let completion = self.get_completion(params);
+        Ok(completion.map(CompletionResponse::Array))
+        // Ok(Some(CompletionResponse::Array(vec![
+        //     CompletionItem::new_simple("test".to_string(), "Some Detail".to_string()),
+        //     CompletionItem::new_simple("another".to_string(), "Another Detail".to_string()),
+        //     CompletionItem::new_simple("test2".to_string(), "Some Detail2".to_string()),
+        // ])))
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+      //Give token based on the position of the hover and return hover information based on the token type (input, output, aux, expr)
+        let hover = self.provide_hover(params);
+      
+      
+        Ok(hover)
+    }
+}

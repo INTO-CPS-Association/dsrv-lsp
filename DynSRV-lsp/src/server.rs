@@ -1,5 +1,6 @@
 // src/server.rs
+pub mod capabilities;
 pub mod backend;
-mod completion_candidates;
+pub mod handler;
 
-pub mod lexer;
+pub use backend::Backend;
