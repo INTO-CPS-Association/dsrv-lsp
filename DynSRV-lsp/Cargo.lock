@@ -14,6 +14,8 @@ dependencies = [
  "logos",
  "regex",
  "ropey",
+ "serde",
+ "serde_json",
  "tokio",
  "tower-lsp",
  "tracing",
