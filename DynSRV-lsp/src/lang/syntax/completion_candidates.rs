@@ -38,7 +38,7 @@ fn insert_format_from_str(fmt: &str) -> Option<InsertTextFormat> {
     }
 }
 
-pub fn json_to_completionItem(builtins: &[BuiltinEntry]) -> Vec<CompletionItem> {
+pub fn json_to_completion_item(builtins: &[BuiltinEntry]) -> Vec<CompletionItem> {
     builtins
         .iter()
         .map(|b| CompletionItem {

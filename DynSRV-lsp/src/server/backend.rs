@@ -87,7 +87,7 @@ impl Backend {
         log::info!("Token at cursor: {:?}", token_at_cursor);
 
         let mut items = Vec::new();
-        items.extend(json_to_completionItem(&self.builtins));
+        items.extend(json_to_completion_item(&self.builtins));
 
         if let Some(spec) = &analysis.spec {
             let item = get_all_declared_symbols(&spec);
