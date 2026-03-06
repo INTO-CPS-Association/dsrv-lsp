@@ -13,7 +13,7 @@ pub struct Backend {
     pub current_analysis: DashMap<Url, Analysis>,
     analysis_map: DashMap<String, Analysis>,
     document_map: DashMap<String, Rope>,
-    token_map: DashMap<String, Vec<(Token, Range<usize>)>>,
+    token_map: DashMap<String, (Vec<Token>, Vec<Range<usize>>)>,
     builtins: Vec<BuiltinEntry>,
 }
 
@@ -80,11 +80,6 @@ impl Backend {
         let token_ref = self.token_map.get(&uri_key)?;
         let tokens = token_ref.value();
 
-        let cursor_char = pos.position.character as usize;
-        let token_at_cursor = tokens
-            .iter()
-            .find(|(_, range)| range.start <= cursor_char && range.end >= cursor_char);
-        log::info!("Token at cursor: {:?}", token_at_cursor);
 
         let mut items = Vec::new();
         items.extend(json_to_completion_item(&self.builtins));
@@ -99,23 +94,24 @@ impl Backend {
     }
 
     pub fn provide_hover(&self, params: HoverParams) -> Option<Hover> {
-        let pos = params.text_document_position_params;
-        let uri_key = pos.text_document.uri.to_string();
+        // let pos = params.text_document_position_params;
+        // let uri_key = pos.text_document.uri.to_string();
 
-        let token_ref = self.token_map.get(&uri_key)?;
-        let tokens = token_ref.value();
+        // let token_ref = self.token_map.get(&uri_key)?;
+        // let tokens = token_ref.value();
 
-        let mut hovers = Vec::new();
-        // contents: HoverContents::Scalar(MarkedString::String("Hovering Test".to_string())),
-        // range: None,
-        for token in tokens {
-            let hover = MarkedString::String(format!("Token: {:?} ", token.0));
-            hovers.push(hover);
-        }
-        Some(Hover {
-            contents: HoverContents::Array(hovers),
-            range: None,
-        })
+        // let mut hovers = Vec::new();
+        // // contents: HoverContents::Scalar(MarkedString::String("Hovering Test".to_string())),
+        // // range: None,
+        // for token in tokens {
+        //     let hover = MarkedString::String(format!("Token: {:?} ", token.0));
+        //     hovers.push(hover);
+        // }
+        // Some(Hover {
+        //     contents: HoverContents::Array(hovers),
+        //     range: None,
+        // })
+        None
     }
 
     // Helper function to create diagnostics from error message and range

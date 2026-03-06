@@ -1,13 +1,16 @@
+use crate::lang::syntax::lexer::tokenize;
+use crate::lang::syntax::{lexer::Token, span_wrapper::Spanned};
+use crate::utils::byte_to_pos;
 use lalrpop_util::ParseError;
 use ropey::Rope;
-use crate::utils::byte_to_pos;
 use tower_lsp::lsp_types::*;
-use trustworthiness_checker::lang::dynamic_lola::ast::LOLASpecification;
-use trustworthiness_checker::lang::dynamic_lola::lalr::TopDeclsParser;
-use trustworthiness_checker::lang::dynamic_lola::lalr_parser::create_lola_spec;
-// use trustworthiness_checker::lang::dynamic_lola::parser::lola_specification;
-use trustworthiness_checker::lang::dynamic_lola::type_checker::TypedLOLASpecification;
+use trustworthiness_checker::SExpr;
+use trustworthiness_checker::lang::dynamic_lola::{
+    ast::LOLASpecification, lalr::TopDeclsParser, lalr_parser::create_lola_spec,
+    type_checker::TypedLOLASpecification,
+};
 
+#[derive(Clone, Debug)]
 pub struct Analysis {
     pub spec: Option<LOLASpecification>, // The parsed specification, if parsing was successful
     pub typed: Option<TypedLOLASpecification>, //For future use, when type checker is implemented
@@ -16,27 +19,24 @@ pub struct Analysis {
 
 impl Analysis {
     // Create Clone function for Analysis struct
-    pub fn clone(&self) -> Self {
-        Self {
-            spec: self.spec.clone(),
-            typed: self.typed.clone(),
-            diags: self.diags.clone(),
-        }
-    }
-
     pub async fn analyze_2_point_0(text: &str) -> Analysis {
         match TopDeclsParser::new().parse(text) {
-            Ok(stmts) => Analysis {
-                spec: Some(create_lola_spec(&stmts)),
-                typed: None,
-                diags: vec![],
-            },
+            Ok(stmts) => {
+                let spec = create_lola_spec(&stmts);
+                let mut diags = vec![];
+                let (tokens, token_spans) = tokenize(text, &mut diags);
+
+                Analysis {
+                    spec: Some(spec.clone()),
+                    typed: None,
+                    diags: vec![],
+                }
+            }
 
             Err(error) => {
-              // Map the error's byte positions to line and column positions in the text_document immediately.
+                // Map the error's byte positions to line and column positions in the text_document immediately.
                 let error = error.map_location(|byte| byte_to_pos(&Rope::from_str(text), byte));
 
-                
                 // Convert the parse error into a diagnostic message with a range indicating where the error occurred in the source code
                 let diags = match error {
                     ParseError::InvalidToken { location } => {
@@ -77,7 +77,7 @@ impl Analysis {
                         Self::create_diag(&format!("User error: {:?}", error), Range::new(p, p))
                     }
                 };
-                
+
                 // Return the analysis result with the diagnostic message
                 Analysis {
                     spec: None,
@@ -87,8 +87,7 @@ impl Analysis {
             }
         }
     }
-    
-    
+
     //Helper function to create a diagnostic with a given message and range
     fn create_diag(msg: &str, range: Range) -> Diagnostic {
         Diagnostic {
@@ -99,36 +98,152 @@ impl Analysis {
             ..Default::default()
         }
     }
-
-    // fn extract_range_from_error(msg: &str) -> Option<Range> {
-    //     //Construct the regex pattern to extract the line and column numbers from the error message
-    //     let re = Regex::new(r"found at line (\d+), column (\d+):line (\d+), column (\d+)").ok()?;
-    //     //Get the numbers from the error message using regex
-    //     let cap = re.captures(msg)?;
-
-    //     // Parse the captured groups into u32 values for line and column numbers
-    //     let line_start: u32 = cap.get(1)?.as_str().parse().ok()?;
-    //     let char_start: u32 = cap.get(2)?.as_str().parse().ok()?;
-    //     let line_end: u32 = cap.get(3)?.as_str().parse().ok()?;
-    //     let char_end: u32 = cap.get(4)?.as_str().parse().ok()?;
-
-    //     //Create the Range object using the extracted line and column numbers, adjusting for zero-based indexing
-    //     Some(Range::new(
-    //         Position::new(line_start - 1, char_start - 1),
-    //         Position::new(line_end - 1, char_end - 1),
-    //     ))
-    // }
-
-    // fn contruct_error_message(msg: &str) -> String {
-    //     let mut lines = msg.lines();
-
-    //     let mut l = lines.nth(3).unwrap_or_default().split(" found ");
-    //     format!(
-    //         "Syntax error: {:?}",
-    //         l.nth(0).unwrap_or_default().trim_start()
-    //     )
-    // }
-
-
 }
 
+
+//Not needed anymore after the ast files was updated to include spans
+// fn wrap_with_spans<'a>(
+//     spec: &'a LOLASpecification,
+//     token_spans: &[(Token, std::ops::Range<usize>)],
+// ) -> Vec<(std::ops::Range<usize>, SExpr)> {
+//     let mut cursor = 0;
+//     fn traverse<'a>(
+//         expr: &'a SExpr,
+//         token_spans: &[(Token, std::ops::Range<usize>)],
+//         cursor: &mut usize,
+//     ) -> (std::ops::Range<usize>, SExpr) {
+//         // Heuristic
+//         let start_pos = token_spans.get(*cursor).map(|(_, r)| r.start).unwrap_or(0);
+
+//         // For each expression type, we determine how many tokens it consumes and traverse its children accordingly, updating the cursor to reflect the current position in the token stream. We then create a Spanned node for the expression using the start position of the first token it consumes and the end position of the last token it consumes.
+//         match expr {
+//             SExpr::Val(_) | SExpr::Var(_) | SExpr::MonitoredAt(_, _) | SExpr::Dist(_, _) => {
+//                 let end_pos = token_spans
+//                     .get(*cursor)
+//                     .map(|(_, r)| r.end)
+//                     .unwrap_or(start_pos);
+//                 *cursor += 1;
+//                 (start_pos..end_pos, expr.clone())
+//             }
+//             SExpr::Not(e)
+//             | SExpr::Sin(e)
+//             | SExpr::Cos(e)
+//             | SExpr::Tan(e)
+//             | SExpr::Abs(e)
+//             | SExpr::IsDefined(e)
+//             | SExpr::When(e)
+//             | SExpr::LHead(e)
+//             | SExpr::LTail(e)
+//             | SExpr::LLen(e) => {
+//                 *cursor += 1;
+//                 traverse(e, token_spans, cursor); // Traverse the child expression
+//                 let end_pos = token_spans
+//                     .get(*cursor - 1)
+//                     .map(|(_, r)| r.end)
+//                     .unwrap_or(start_pos);
+//                 (start_pos..end_pos, expr.clone())
+//             }
+//             SExpr::BinOp(e1, e2, _)
+//             | SExpr::LConcat(e1, e2)
+//             | SExpr::Update(e1, e2)
+//             | SExpr::Default(e1, e2)
+//             | SExpr::Init(e1, e2)
+//             | SExpr::Latch(e1, e2)
+//             | SExpr::LAppend(e1, e2)
+//             | SExpr::LIndex(e1, e2) => {
+//                 traverse(e1, token_spans, cursor);
+//                 *cursor += 1;
+//                 traverse(e2, token_spans, cursor);
+//                 let end_pos = token_spans
+//                     .get(*cursor - 1)
+//                     .map(|(_, r)| r.end)
+//                     .unwrap_or(start_pos);
+//                 (start_pos..end_pos, expr.clone())
+//             }
+//             SExpr::If(e1, e2, e3) => {
+//                 *cursor += 1;
+//                 traverse(e1, token_spans, cursor);
+//                 *cursor += 1;
+//                 traverse(e2, token_spans, cursor);
+//                 *cursor += 1;
+//                 traverse(e3, token_spans, cursor);
+//                 let end_pos = token_spans
+//                     .get(*cursor - 1)
+//                     .map(|(_, r)| r.end)
+//                     .unwrap_or(start_pos);
+//                 (start_pos..end_pos, expr.clone())
+//             }
+//             SExpr::SIndex(e, _) => {
+//                 traverse(e, token_spans, cursor);
+//                 *cursor += 1; // "["
+//                 *cursor += 1; // index
+//                 *cursor += 1; // "]"
+//                 let end_pos = token_spans
+//                     .get(*cursor - 1)
+//                     .map(|(_, r)| r.end)
+//                     .unwrap_or(start_pos);
+//                 (start_pos..end_pos, expr.clone())
+//             }
+//             SExpr::Dynamic(e, _) | SExpr::RestrictedDynamic(e, _, _) | SExpr::Defer(e, _) => {
+//                 *cursor += 1; // "dynamic" or "defer"
+//                 traverse(e, token_spans, cursor);
+//                 let end_pos = token_spans
+//                     .get(*cursor - 1)
+//                     .map(|(_, r)| r.end)
+//                     .unwrap_or(start_pos);
+//                 (start_pos..end_pos, expr.clone())
+//             }
+//             SExpr::List(es) => {
+//                 *cursor += 1; // "("
+//                 for (i, e) in es.iter().enumerate() {
+//                     if i > 0 {
+//                         *cursor += 1;
+//                     } // "," 
+//                     traverse(e, token_spans, cursor);
+//                 }
+//                 *cursor += 1; // ")"
+//                 let end_pos = token_spans
+//                     .get(*cursor - 1)
+//                     .map(|(_, r)| r.end)
+//                     .unwrap_or(start_pos);
+//                 (start_pos..end_pos, expr.clone())
+//             }
+//             SExpr::Map(m) => {
+//                 *cursor += 1; // "{"
+//                 for (i, (_, v)) in m.iter().enumerate() {
+//                     if i > 0 {
+//                         *cursor += 1;
+//                     } // "," 
+//                     traverse(v, token_spans, cursor);
+//                 }
+//                 *cursor += 1; // "}"
+//                 let end_pos = token_spans
+//                     .get(*cursor - 1)
+//                     .map(|(_, r)| r.end)
+//                     .unwrap_or(start_pos);
+//                 (start_pos..end_pos, expr.clone())
+//             }
+//             _ => {
+//                 let end_pos = token_spans
+//                     .get(*cursor)
+//                     .map(|(_, r)| r.end)
+//                     .unwrap_or(start_pos);
+//                 *cursor += 1;
+//                 (start_pos..end_pos, expr.clone())
+//             }
+//         }
+//     }
+//     spec.exprs
+//         .values()
+//         .map(|e| traverse(e, token_spans, &mut cursor))
+//         .collect()
+        
+// }
+
+fn _node_at_offset<'a>(nodes: &'a [Spanned<'a, SExpr>], offset: usize) -> Option<&'a SExpr> {
+    nodes
+        .iter()
+        .filter(|n| n.start <= offset && offset <= n.end)
+        .min_by_key(|n| n.end - n.start)
+        .map(|n| n.node)
+}

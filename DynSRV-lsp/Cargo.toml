@@ -21,12 +21,13 @@ log = "0.4.29"
 logos = "0.16.1"
 regex = "1.12.3"
 ropey = "1.6.1"
+rowan = "0.16.1"
 serde = "1.0.228"
 serde_json = "1.0.128"
 tokio = { version = "1", features = ["full"] }
 tower-lsp = "0.20.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-trustworthiness_checker = { git = "https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker", version = "0.1.0" }
+trustworthiness_checker = { git = "https://github.com/EmmiPigen/robosapiens-trustworthiness-checker", version = "0.1.0" }
 
 

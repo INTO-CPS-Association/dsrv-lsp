@@ -170,6 +170,10 @@ pub enum Token {
     LBracket,
     #[token("]")]
     RBracket,
+    #[token("{")]
+    LBrace,
+    #[token("}")]
+    RBrace,
     #[token(":")]
     Colon,
     #[token(",")]
@@ -193,7 +197,7 @@ pub enum Token {
 
 
 /// Main function to tokenize source code and collect diagnostics if there are lexer errors. Returns a vector of tokens and their corresponding spans.
-pub fn tokenize(source: &str, diags: &mut Vec<Diagnostic>) -> Vec<(Token, std::ops::Range<usize>)> {
+pub fn tokenize(source: &str, diags: &mut Vec<Diagnostic>) ->  (Vec<Token>, Vec<std::ops::Range<usize>>) {
     let mut lexer = Token::lexer(source);
     let mut tokens = Vec::new();
     let mut spans = Vec::new();
@@ -212,5 +216,6 @@ pub fn tokenize(source: &str, diags: &mut Vec<Diagnostic>) -> Vec<(Token, std::o
         spans.push(span); // Push the span of the current token to the spans vector, regardless of whether it was successfully parsed or not
     }
 
-    tokens.into_iter().zip(spans.into_iter()).collect() // Combine tokens and spans into a vector of tuples and return
+    (tokens, spans)
+    // tokens.into_iter().zip(spans.into_iter()).collect() // Combine tokens and spans into a vector of tuples and return
 }
