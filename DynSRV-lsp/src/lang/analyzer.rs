@@ -1,13 +1,17 @@
-use crate::lang::syntax::lexer::tokenize;
-use crate::lang::syntax::{lexer::Token, span_wrapper::Spanned};
-use crate::utils::byte_to_pos;
+use crate::utils::*;
 use lalrpop_util::ParseError;
 use ropey::Rope;
 use tower_lsp::lsp_types::*;
-use trustworthiness_checker::SExpr;
-use trustworthiness_checker::lang::dynamic_lola::{
-    ast::LOLASpecification, lalr::TopDeclsParser, lalr_parser::create_lola_spec,
-    type_checker::TypedLOLASpecification,
+use trustworthiness_checker::lang::{
+    core::parser::ExprParser,
+    dynamic_lola::{
+        ast::{LOLASpecification, SpannedExpr},
+        lalr::TopDeclsParser,
+        lalr_parser::{create_lola_spec, parse_sexpr, parse_str},
+        parser::{CombExprParser, lola_specification},
+        span::*,
+        type_checker::TypedLOLASpecification,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -15,21 +19,25 @@ pub struct Analysis {
     pub spec: Option<LOLASpecification>, // The parsed specification, if parsing was successful
     pub typed: Option<TypedLOLASpecification>, //For future use, when type checker is implemented
     pub diags: Vec<Diagnostic>,          // Diagnostics from both syntax and semantic analysis
+    pub spanned_nodes: Vec<SpannedExpr>, // A vector of all expressions in the spec annotated with their spans
 }
 
 impl Analysis {
     // Create Clone function for Analysis struct
     pub async fn analyze_2_point_0(text: &str) -> Analysis {
+        let mut s: &str = text;
+        // Turn s into &mut &str
+        let s = &mut s;
+
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
                 let spec = create_lola_spec(&stmts);
-                let mut diags = vec![];
-                let (tokens, token_spans) = tokenize(text, &mut diags);
 
                 Analysis {
                     spec: Some(spec.clone()),
                     typed: None,
                     diags: vec![],
+                    spanned_nodes: vec![],
                 }
             }
 
@@ -83,12 +91,47 @@ impl Analysis {
                     spec: None,
                     typed: None,
                     diags: vec![diags],
+                    spanned_nodes: vec![],
                 }
             }
         }
-    }
 
-    //Helper function to create a diagnostic with a given message and range
+        // match CombExprParser::raw_parse_error(s) {
+        //     // match parse_str(s) {
+        //     Ok(spec) => {
+        //         log::info!("Parsed spec: {:?}", spec);
+
+        //         let exprs = spec.exprs.clone();
+        //         //get spans for each expression in the spec
+        //         let span_nodes = exprs
+        //             .values()
+        //             .map(|e| SpannedExpr {
+        //                 span: e.span.clone(),
+        //                 node: e.clone().node,
+        //             })
+        //             .collect();
+
+        //         log::info!("Spanned nodes: {:?}", span_nodes);
+
+        //         Analysis {
+        //             spec: Some(spec.clone()),
+        //             typed: None,
+        //             diags: vec![],
+        //             spanned_nodes: span_nodes,
+        //         }
+        //     }
+
+        //     Err(error) => {
+        //         log::error!("Parse error: {:?}", error);
+        //         Analysis {
+        //             spec: None,
+        //             typed: None,
+        //             diags: vec![],
+        //             spanned_nodes: vec![],
+        //         }
+        //     }
+        // }
+    }
     fn create_diag(msg: &str, range: Range) -> Diagnostic {
         Diagnostic {
             range: range,
@@ -98,8 +141,75 @@ impl Analysis {
             ..Default::default()
         }
     }
+    // match TopDeclsParser::new().parse(text) {
+    //     Ok(stmts) => {
+    //         let spec = create_lola_spec(&stmts);
+    //         let mut diags = vec![];
+    //         let (tokens, token_spans) = tokenize(text, &mut diags);
+
+    //         Analysis {
+    //             spec: Some(spec.clone()),
+    //             typed: None,
+    //             diags: vec![],
+    //         }
+    //     }
+
+    //     Err(error) => {
+    //         // Map the error's byte positions to line and column positions in the text_document immediately.
+    //         let error = error.map_location(|byte| byte_to_pos(&Rope::from_str(text), byte));
+
+    //         // Convert the parse error into a diagnostic message with a range indicating where the error occurred in the source code
+    //         let diags = match error {
+    //             ParseError::InvalidToken { location } => {
+    //                 let range =
+    //                     Range::new(location.unwrap_or_default(), location.unwrap_or_default());
+    //                 Self::create_diag("Invalid Token", range)
+    //             }
+    //             ParseError::UnrecognizedEof {
+    //                 location,
+    //                 expected: _,
+    //             } => {
+    //                 let range = Range {
+    //                     start: location.unwrap_or_default(),
+    //                     end: location.unwrap_or_default(),
+    //                 };
+
+    //                 Self::create_diag("Syntax error: Unexpected EOF", range)
+    //             }
+
+    //             ParseError::UnrecognizedToken { token, expected: _ } => {
+    //                 let (start, _tok, end) = token;
+    //                 Self::create_diag(
+    //                     "Syntax error: Unrecognized token",
+    //                     Range::new(start.unwrap_or_default(), end.unwrap_or_default()),
+    //                 )
+    //             }
+    //             ParseError::ExtraToken { token } => {
+    //                 let (start, _tok, end) = token;
+
+    //                 Self::create_diag(
+    //                     "Syntax error: Extra token:",
+    //                     Range::new(start.unwrap_or_default(), end.unwrap_or_default()),
+    //                 )
+    //             }
+
+    //             ParseError::User { error } => {
+    //                 let p = Position::new(1, 1);
+    //                 Self::create_diag(&format!("User error: {:?}", error), Range::new(p, p))
+    //             }
+    //         };
+
+    //         // Return the analysis result with the diagnostic message
+    //         Analysis {
+    //             spec: None,
+    //             typed: None,
+    //             diags: vec![diags],
+    //         }
+    //     }
+    // }
 }
 
+//Helper function to create a diagnostic with a given message and range
 
 //Not needed anymore after the ast files was updated to include spans
 // fn wrap_with_spans<'a>(
@@ -198,7 +308,7 @@ impl Analysis {
 //                 for (i, e) in es.iter().enumerate() {
 //                     if i > 0 {
 //                         *cursor += 1;
-//                     } // "," 
+//                     } // ","
 //                     traverse(e, token_spans, cursor);
 //                 }
 //                 *cursor += 1; // ")"
@@ -213,7 +323,7 @@ impl Analysis {
 //                 for (i, (_, v)) in m.iter().enumerate() {
 //                     if i > 0 {
 //                         *cursor += 1;
-//                     } // "," 
+//                     } // ","
 //                     traverse(v, token_spans, cursor);
 //                 }
 //                 *cursor += 1; // "}"
@@ -237,13 +347,37 @@ impl Analysis {
 //         .values()
 //         .map(|e| traverse(e, token_spans, &mut cursor))
 //         .collect()
-        
+
 // }
 
-fn _node_at_offset<'a>(nodes: &'a [Spanned<'a, SExpr>], offset: usize) -> Option<&'a SExpr> {
-    nodes
-        .iter()
-        .filter(|n| n.start <= offset && offset <= n.end)
-        .min_by_key(|n| n.end - n.start)
-        .map(|n| n.node)
-}
+// fn _node_at_offset<'a>(nodes: &'a [Spanned<'a, SExpr>], offset: usize) -> Option<&'a SExpr> {
+//     nodes
+//         .iter()
+//         .filter(|n| n.start <= offset && offset <= n.end)
+//         .min_by_key(|n| n.end - n.start)
+//         .map(|n| n.node)
+// }
+
+// -----    Lalr parser version ----
+//     match lalr_parser::parse_str(text) {
+//         Ok(spec) => {
+//             log::info!("Parsed spec: {:?}", spec);
+
+//             Analysis {
+//                 spec: Some(spec.clone()),
+//                 typed: None,
+//                 diags: vec![],
+//                 spanned_nodes: vec![]
+//             }
+//         }
+//         Err(error) => {
+//             log::error!("Parse error: {:?}", error);
+//             Analysis {
+//                 spec: None,
+//                 typed: None,
+//                 diags: vec![],
+//                 spanned_nodes: vec![],
+//             }
+//     }
+
+// }

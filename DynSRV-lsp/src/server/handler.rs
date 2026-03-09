@@ -75,7 +75,8 @@ impl LanguageServer for Backend {
     async fn did_close(&self, _params: DidCloseTextDocumentParams) {
         log::debug!("File Closed");
     }
-
+    
+    // TODO: Implement the completion handler to provide context-aware suggestions based on the current position in the document after the AST structure is updated with spanned nodes
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let completion = self.get_completion(params);
         Ok(completion.map(CompletionResponse::Array))
@@ -86,6 +87,7 @@ impl LanguageServer for Backend {
         // ])))
     }
 
+    // TODO: Implement the hover handler to provide information about the token under the cursor, such as its type and documentation, based on the AST structure with spanned nodes½
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
       //Give token based on the position of the hover and return hover information based on the token type (input, output, aux, expr)
         let hover = self.provide_hover(params);

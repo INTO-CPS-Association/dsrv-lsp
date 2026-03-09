@@ -42,7 +42,7 @@ impl Backend {
                 // If URI is successfully converted to file path, proceed with analysis
                 self.logger(format!("Analyzing document `{}`", uri), MessageType::INFO)
                     .await;
-
+                
                 let analysis = Analysis::analyze_2_point_0(&text).await;
                 for diag in analysis.clone().diags {
                     diags.push(diag);
@@ -70,6 +70,7 @@ impl Backend {
 
     }
 
+    // TODO: Implement the completion handler to provide autocompletion suggestions based on the current position in the document after the AST structure is updated with spanned nodes
     pub fn get_completion(&self, params: CompletionParams) -> Option<Vec<CompletionItem>> {
         let pos = params.text_document_position;
         let uri_key = pos.text_document.uri.to_string();
@@ -78,7 +79,7 @@ impl Backend {
         let analysis = analysis_ref.value();
 
         let token_ref = self.token_map.get(&uri_key)?;
-        let tokens = token_ref.value();
+        let _tokens = token_ref.value();
 
 
         let mut items = Vec::new();
@@ -93,7 +94,8 @@ impl Backend {
         return Some(items);
     }
 
-    pub fn provide_hover(&self, params: HoverParams) -> Option<Hover> {
+    // TODO: Implement the hover handler to provide information about the symbol under the cursor based on the current position in the document after the AST structure is updated with spanned nodes
+    pub fn provide_hover(&self, _params: HoverParams) -> Option<Hover> {
         // let pos = params.text_document_position_params;
         // let uri_key = pos.text_document.uri.to_string();
 
