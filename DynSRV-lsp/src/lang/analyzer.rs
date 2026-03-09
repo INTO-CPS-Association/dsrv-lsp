@@ -24,6 +24,7 @@ impl Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
                 let spec = create_lola_spec(&stmts);
+                log::info!("Parsed specification: {:?}", spec);
 
                 Analysis {
                     spec: Some(spec.clone()),
@@ -34,6 +35,7 @@ impl Analysis {
             }
 
             Err(error) => {
+                log::error!("Parsing error: {:?}", error);
                 // Map the error's byte positions to line and column positions in the text_document immediately.
                 let error = error.map_location(|byte| byte_to_pos(&Rope::from_str(text), byte));
 
@@ -88,15 +90,6 @@ impl Analysis {
             }
         }
 
-        //         log::error!("Parse error: {:?}", error);
-        //         Analysis {
-        //             spec: None,
-        //             typed: None,
-        //             diags: vec![],
-        //             spanned_nodes: vec![],
-        //         }
-        //     }
-        // }
     }
     fn create_diag(msg: &str, range: Range) -> Diagnostic {
         Diagnostic {
