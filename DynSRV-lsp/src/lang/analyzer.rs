@@ -5,7 +5,7 @@ use tower_lsp::lsp_types::*;
 use trustworthiness_checker::lang::dynamic_lola::{
     ast::{LOLASpecification, SpannedExpr},
     lalr::TopDeclsParser,
-    lalr_parser::create_lola_spec,
+    lalr_parser:: {create_lola_spec, parser_str_lossy},
     type_checker::TypedLOLASpecification,
 };
 

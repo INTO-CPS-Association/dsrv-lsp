@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use ecow::EcoString;
 use ecow::EcoVec;
+use serde_json::value::Index;
 use trustworthiness_checker::Value;
 use trustworthiness_checker::VarName;
 use trustworthiness_checker::core::StreamTypeAscription;
@@ -156,18 +157,73 @@ pub fn walk_expr<V: Visitor>(v: &mut V, expr: &SpannedExpr) {
 pub struct NodeInfo {
     pub span: Span,
     pub kind: String,
-    // pub name: Option<String>,
+    pub name: Option<String>,
 }
 
-pub struct nodeCollector {
+pub struct NodeCollector {
     pub nodes: Vec<NodeInfo>,
 }
 
-impl nodeCollector {
-    pub fn push(&mut self, span: &Span, kind: &str) {
+impl NodeCollector {
+    pub fn new() -> Self {
+        Self { nodes: Vec::new() }
+    }
+}
+
+impl Visitor for NodeCollector {
+    fn visit_leaf(&mut self, expr: &SExpr, span: &Span) {
+let (kind, name) = match expr {
+            SExpr::Val(v) => ("Value".to_string(), Some(format!("{:?}", v))),
+            SExpr::Var(v) => ("Variable".to_string(), Some(v.to_string())),
+            _ => ("Leaf".to_string(), None),
+        };
+
         self.nodes.push(NodeInfo {
             span: span.clone(),
-            kind: kind.to_string(),
+            kind,
+            name,
         });
     }
+
+    fn visit_binary(
+        &mut self,
+        _left: &SpannedExpr,
+        _right: &SpannedExpr,
+        op_type: &str,
+        span: &Span,
+    ) {
+        self.nodes.push(NodeInfo {
+            span: span.clone(),
+            kind: format!("Binary({})", op_type),
+            name: None,
+        });
+    }
+
+    fn visit_unary(&mut self, child: &SpannedExpr, op_type: &str, span: &Span) {
+        self.nodes.push(NodeInfo {
+            span: span.clone(),
+            kind: format!("Unary({})", op_type),
+            name: None,
+        })
+    }
+
+    fn visit_if(
+            &mut self,
+            cond: &SpannedExpr,
+            then_br: &SpannedExpr,
+            else_br: &SpannedExpr,
+            span: &Span,
+        ) {
+        self.nodes.push(NodeInfo {
+            span: span.clone(),
+            kind: "If".to_string(),
+            name: None
+        });
+    }
+
+    fn visit_list(&mut self, items: &EcoVec<SpannedExpr>, span: &Span) {
+        self.nodes.push(NodeInfo { span: span.clone(), kind: "Index".to_string(), name: Some() });
+    }
+
+
 }
