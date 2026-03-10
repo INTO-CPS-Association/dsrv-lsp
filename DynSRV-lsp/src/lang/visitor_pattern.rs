@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use ecow::EcoString;
 use ecow::EcoVec;
-use rowan::WalkEvent;
 use trustworthiness_checker::Value;
 use trustworthiness_checker::VarName;
 use trustworthiness_checker::core::StreamTypeAscription;
