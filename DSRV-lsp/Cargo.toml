@@ -1,14 +1,14 @@
 [package]
-name = "DynSRV-lsp"
+name = "DSRV-lsp"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "dynsrv-lsp"
+name = "dsrv-lsp"
 path = "src/main.rs"
 
 [lib]
-name = "dynsrv_lsp"
+name = "dsrv_lsp"
 path = "src/lib.rs"
 
 

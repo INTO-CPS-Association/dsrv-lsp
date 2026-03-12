@@ -1,5 +1,5 @@
 use tower_lsp::{LspService, Server};
-use dynsrv_lsp::server::Backend;
+use dsrv_lsp::server::Backend;
 
 
 #[tokio::main]
