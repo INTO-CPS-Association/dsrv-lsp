@@ -4,8 +4,8 @@ use crate::lang::syntax::lexer::*;
 use dashmap::DashMap;
 use ropey::Rope;
 use std::ops::Range;
+use tower_lsp::Client;
 use tower_lsp::lsp_types::*;
-use tower_lsp::{Client};
 use trustworthiness_checker::{LOLASpecification, VarName};
 
 pub struct Backend {
@@ -14,7 +14,7 @@ pub struct Backend {
     analysis_map: DashMap<String, Analysis>,
     document_map: DashMap<String, Rope>,
     token_map: DashMap<String, (Vec<Token>, Vec<Range<usize>>)>,
-    builtins: Vec<BuiltinEntry>,
+    // builtins: Vec<BuiltinEntry>,
 }
 
 // Backend implementation for the language server
@@ -26,7 +26,7 @@ impl Backend {
             document_map: DashMap::new(),
             analysis_map: DashMap::new(),
             token_map: DashMap::new(),
-            builtins: load_built_ins(),
+            // builtins: load_built_ins(),
         }
     }
     pub async fn change(&self, uri: Url, text: &String) {
@@ -42,7 +42,7 @@ impl Backend {
                 // If URI is successfully converted to file path, proceed with analysis
                 self.logger(format!("Analyzing document `{}`", uri), MessageType::INFO)
                     .await;
-                
+
                 let analysis = Analysis::analyze_2_point_0(&text).await;
                 for diag in analysis.clone().diags {
                     diags.push(diag);
@@ -67,7 +67,6 @@ impl Backend {
                 .await;
             }
         }
-
     }
 
     // TODO: Implement the completion handler to provide autocompletion suggestions based on the current position in the document after the AST structure is updated with spanned nodes
@@ -78,19 +77,33 @@ impl Backend {
         let analysis_ref = self.analysis_map.get(&uri_key)?;
         let analysis = analysis_ref.value();
 
-        let token_ref = self.token_map.get(&uri_key)?;
-        let _tokens = token_ref.value();
-
-
         let mut items = Vec::new();
-        items.extend(json_to_completion_item(&self.builtins));
 
+        // Collects and add input, output, aux variables and stream expressions
         if let Some(spec) = &analysis.spec {
             let item = get_all_declared_symbols(&spec);
-            for i in item {
-                items.push(i);
-            }
+            items.extend(item);
         }
+
+        // For the built in completion candidates to be available.
+        let builtin_items: Vec<CompletionItem> = BUILTIN_REGISTRY
+            .iter()
+            .map(|builtin| CompletionItem {
+                label: builtin.label.to_string(),
+                kind: Some(builtin.kind),
+                detail: Some(builtin.detail.to_string()),
+                insert_text: Some(builtin.insert_text.to_string()),
+                insert_text_format: Some(builtin.insert_text_format),
+                documentation: Some(Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: builtin.documentation.to_string(),
+                })),
+                ..Default::default()
+            })
+            .collect();
+
+        items.extend(builtin_items);
+
         return Some(items);
     }
 
@@ -148,17 +161,11 @@ fn get_all_declared_symbols(spec: &LOLASpecification) -> Vec<CompletionItem> {
     }
 
     for name in &spec.aux_info {
-        items.push(create_item(name, CompletionItemKind::VARIABLE, "Aux/Var"));
-    }
-
-    for (name, _) in &spec.exprs {
-        if !spec.input_vars.contains(name) && !spec.output_vars.contains(name) {
-            items.push(create_item(
-                name,
-                CompletionItemKind::VARIABLE,
-                "Stream Expression",
-            ));
-        }
+        items.push(create_item(
+            name,
+            CompletionItemKind::VARIABLE,
+            "Stream Variables",
+        ));
     }
 
     items

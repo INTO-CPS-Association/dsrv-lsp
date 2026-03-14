@@ -24,7 +24,7 @@ impl Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
                 let spec = create_lola_spec(&stmts);
-                log::info!("Parsed specification: {:?}", spec);
+                log::info!("Parsed specification: {:#?}", spec);
 
                 Analysis {
                     spec: Some(spec.clone()),
