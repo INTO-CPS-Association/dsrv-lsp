@@ -33,9 +33,10 @@ impl Analysis {
                     spanned_nodes: vec![],
                 }
             }
+            
 
             Err(error) => {
-                log::error!("Parsing error: {:?}", error);
+                log::error!("Parsing error: {:#?}", error);
                 // Map the error's byte positions to line and column positions in the text_document immediately.
                 let error = error.map_location(|byte| byte_to_pos(&Rope::from_str(text), byte));
 
