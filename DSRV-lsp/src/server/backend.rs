@@ -1,6 +1,7 @@
 use crate::lang::analyzer::*;
 use crate::lang::syntax::completion_candidates::*;
 use crate::lang::syntax::lexer::*;
+use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
 use std::ops::Range;
@@ -49,7 +50,7 @@ impl Backend {
                 }
                 self.current_analysis.insert(uri.clone(), analysis.clone());
 
-                // Only Update the symbol map if AST is valid
+                // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document
                 if analysis.spec.is_some() {
                     self.analysis_map.insert(uri.to_string(), analysis.clone());
                 }
@@ -108,7 +109,21 @@ impl Backend {
     }
 
     // TODO: Implement the hover handler to provide information about the symbol under the cursor based on the current position in the document after the AST structure is updated with spanned nodes
-    pub fn provide_hover(&self, _params: HoverParams) -> Option<Hover> {
+    pub fn provide_hover(&self, params: HoverParams) -> Option<Hover> {
+      let pos = params.text_document_position_params;
+      let uri_key = pos.text_document.uri.to_string();
+      
+      let analysis_ref = self.analysis_map.get(&uri_key)?;
+      let analysis = analysis_ref.value();
+      
+      let rope = self.document_map.get(&uri_key)?;
+      let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+      
+      let node_at_offset = Analysis::node_at_offset(&analysis, pos_offset);
+      log::info!("Node at offset {}: {:?}", pos_offset, node_at_offset);
+      
+      
+      
         // let pos = params.text_document_position_params;
         // let uri_key = pos.text_document.uri.to_string();
 

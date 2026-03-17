@@ -1,12 +1,9 @@
-use crate::utils::*;
+use crate::{lang::pattern_matching::extract_nodes, utils::*};
 use lalrpop_util::ParseError;
 use ropey::Rope;
 use tower_lsp::lsp_types::*;
 use trustworthiness_checker::lang::dynamic_lola::{
-    ast::{LOLASpecification, SpannedExpr},
-    lalr::TopDeclsParser,
-    lalr_parser:: {create_lola_spec},
-    type_checker::TypedLOLASpecification,
+    ast::{LOLASpecification, SpannedExpr}, lalr::TopDeclsParser, lalr_parser::create_lola_spec, type_checker::TypedLOLASpecification
 };
 
 #[derive(Clone, Debug)]
@@ -24,13 +21,20 @@ impl Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
                 let spec = create_lola_spec(&stmts);
-                log::info!("Parsed specification: {:#?}", spec);
-
+                // log::info!("Parsed specification: {:#?}", spec);
+                
+                let mut nodes = Vec::new();
+                
+                for (_name, expr) in &spec.exprs {
+                  extract_nodes(expr, &mut nodes);
+                }
+                // log::info!("Extracted spanned nodes: {:#?}", nodes);
+                
                 Analysis {
                     spec: Some(spec.clone()),
                     typed: None,
                     diags: vec![],
-                    spanned_nodes: vec![],
+                    spanned_nodes: nodes,
                 }
             }
             
