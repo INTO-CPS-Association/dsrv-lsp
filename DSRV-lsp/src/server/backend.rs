@@ -18,7 +18,7 @@ use ropey::Rope;
 use std::ops::Range;
 use tower_lsp::Client;
 use tower_lsp::lsp_types::*;
-use trustworthiness_checker::{LOLASpecification, VarName};
+use trustworthiness_checker::{DsrvSpecification, VarName};
 
 pub struct Backend {
     pub client: Client,
@@ -169,7 +169,7 @@ fn _pos_to_slice(pos: Position, rope: &Rope) -> Option<String> {
 }
 
 // Convert specification items into completion items for autocompletion
-fn get_all_declared_symbols(spec: &LOLASpecification) -> Vec<CompletionItem> {
+fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<CompletionItem> {
     let mut items = Vec::new();
     for name in &spec.input_vars {
         items.push(create_item(

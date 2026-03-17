@@ -1,6 +1,6 @@
 use trustworthiness_checker::{
     SExpr,
-    lang::dynamic_lola::{ast::SpannedExpr},
+    lang::dsrv::ast::SpannedExpr,
 };
 
 use crate::lang::analyzer::Analysis;

@@ -6,8 +6,8 @@ use ecow::EcoVec;
 use trustworthiness_checker::VarName;
 use trustworthiness_checker::core::StreamTypeAscription;
 use trustworthiness_checker::distributed::distribution_graphs::NodeName;
-use trustworthiness_checker::lang::dynamic_lola::ast::*;
-use trustworthiness_checker::lang::dynamic_lola::span::*;
+use trustworthiness_checker::lang::dsrv::ast::*;
+use trustworthiness_checker::lang::dsrv::span::*;
 
 pub enum RelationType {
     MonitoredAt,

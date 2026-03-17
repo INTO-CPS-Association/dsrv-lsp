@@ -2,14 +2,21 @@ use crate::{lang::pattern_matching::extract_nodes, utils::*};
 use lalrpop_util::ParseError;
 use ropey::Rope;
 use tower_lsp::lsp_types::*;
-use trustworthiness_checker::lang::dynamic_lola::{
-    ast::{LOLASpecification, SpannedExpr}, lalr::TopDeclsParser, lalr_parser::create_lola_spec, type_checker::TypedLOLASpecification
+use trustworthiness_checker::lang::dsrv::{
+    ast::{DsrvSpecification, SpannedExpr},
+    lalr::TopDeclsParser,
+    lalr_parser::create_dsrv_spec,
+    type_checker::TypedDsrvSpecification,
 };
+
+// dynamic_lola::{
+//     ast::{, SpannedExpr}, lalr::TopDeclsParser, lalr_parser::create_lola_spec, type_checker::TypedLOLASpecification
+// };
 
 #[derive(Clone, Debug)]
 pub struct Analysis {
-    pub spec: Option<LOLASpecification>, // The parsed specification, if parsing was successful
-    pub typed: Option<TypedLOLASpecification>, //For future use, when type checker is implemented
+    pub spec: Option<DsrvSpecification>, // The parsed specification, if parsing was successful
+    pub typed: Option<TypedDsrvSpecification>, //For future use, when type checker is implemented
     pub diags: Vec<Diagnostic>,          // Diagnostics from both syntax and semantic analysis
     pub spanned_nodes: Vec<SpannedExpr>, // A vector of all expressions in the spec annotated with their spans
 }
@@ -17,19 +24,18 @@ pub struct Analysis {
 impl Analysis {
     // Create Clone function for Analysis struct
     pub async fn analyze_2_point_0(text: &str) -> Analysis {
-
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
-                let spec = create_lola_spec(&stmts);
+                let spec = create_dsrv_spec(&stmts);
                 // log::info!("Parsed specification: {:#?}", spec);
-                
+
                 let mut nodes = Vec::new();
-                
+
                 for (_name, expr) in &spec.exprs {
-                  extract_nodes(expr, &mut nodes);
+                    extract_nodes(expr, &mut nodes);
                 }
                 // log::info!("Extracted spanned nodes: {:#?}", nodes);
-                
+
                 Analysis {
                     spec: Some(spec.clone()),
                     typed: None,
@@ -37,7 +43,6 @@ impl Analysis {
                     spanned_nodes: nodes,
                 }
             }
-            
 
             Err(error) => {
                 log::error!("Parsing error: {:#?}", error);
@@ -94,7 +99,6 @@ impl Analysis {
                 }
             }
         }
-
     }
     fn create_diag(msg: &str, range: Range) -> Diagnostic {
         Diagnostic {
