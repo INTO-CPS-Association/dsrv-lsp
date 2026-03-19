@@ -17,7 +17,7 @@ fn lex_block_comment(lex: &mut Lexer<Token>) -> Result<(), LexerError> {
                     depth -= 1; // Decrease depth for block comment nesting
                     if depth == 0 {
                         // If depth is zero, we have closed all nested block comments
-                        lex.bump(i + 2); // Advance the lexer past the closing '*)'
+                        lex.bump(i + "*)".len()); // Advance the lexer past the closing '*)'
                         return Ok(());
                     }
                 }
@@ -61,7 +61,8 @@ impl LexerError {
     }
 }
 
-#[derive(Logos, Debug, Clone, PartialEq)]
+#[derive(Logos, Debug, Clone, PartialEq, Copy, Eq, PartialOrd, Ord, Hash)]
+#[repr(u16)]
 #[logos(error=LexerError)]
 pub enum Token {
     #[regex(r"//[^\n\r]*", allow_greedy = true)]
@@ -182,40 +183,69 @@ pub enum Token {
     Dot,
 
     // Identifiers and literals
-    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
-    Identifier(String),
+    #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
+    Identifier,
     #[regex(r#""([^"\\]|\\.)*""#)]
     StringLiteral,
-    #[regex(r"-?\d+", |lex| lex.slice().parse::<i64>().ok())]
-    IntLiteral(i64),
-    #[regex(r"-?\d+\.\d+", |lex| lex.slice().parse::<f64>().ok())]
-    FloatLiteral(f64),
+    #[regex(r"\d+\.\d+")]
+    FloatLiteral,
+    #[regex(r"\d+")]
+    IntLiteral,
     #[regex(r"\s+")]
     Whitespace,
     Error,
 }
 
+#[derive(Debug, Clone)]
+pub struct TokenData {
+    pub token: Token,
+    pub content: String,
+    pub span: std::ops::Range<usize>,
+}
 
 /// Main function to tokenize source code and collect diagnostics if there are lexer errors. Returns a vector of tokens and their corresponding spans.
-pub fn tokenize(source: &str, diags: &mut Vec<Diagnostic>) ->  (Vec<Token>, Vec<std::ops::Range<usize>>) {
-    let mut lexer = Token::lexer(source);
+pub fn tokenize(text: &str) -> Vec<TokenData> {
+    let mut lexer = Token::lexer(text);
     let mut tokens = Vec::new();
-    let mut spans = Vec::new();
 
-    while let Some(result) = lexer.next() {
-        let span = lexer.span(); // Get the byte range of the current token
-        match result {
-            Ok(token) => {
-                tokens.push(token); // Push the successfully parsed token to the tokens vector
+    while let Some(token_result) = lexer.next() {
+        let span = lexer.span();
+        let content = lexer.slice().to_string();
+
+        match token_result {
+            Ok(t) => {
+                if t != Token::Whitespace && t != Token::LineComment && t != Token::BlockComment {
+                    tokens.push(TokenData {
+                        token: t,
+                        content,
+                        span,
+                    });
+                }
             }
-            Err(err) => {
-                diags.push(err.into_diags(span.clone(), source));
-                tokens.push(Token::Error); // Push an error token to the tokens vector to maintain alignment with spans, even if the token couldn't be parsed successfully
+            Err(_) => {
+                tokens.push(TokenData {
+                    token: Token::Error,
+                    content,
+                    span,
+                });
             }
         }
-        spans.push(span); // Push the span of the current token to the spans vector, regardless of whether it was successfully parsed or not
     }
+    tokens
+}
 
-    (tokens, spans)
-    // tokens.into_iter().zip(spans.into_iter()).collect() // Combine tokens and spans into a vector of tuples and return
+pub fn find_token_at_cursor(tokens: &[TokenData], cursor_offset: usize) -> Option<&TokenData> {
+    tokens
+        .iter()
+        .filter(|t| t.span.start <= cursor_offset)
+        .last()
+}
+
+pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&str> {
+    let last_token = find_token_at_cursor(&tokens, cursor_offset).unwrap();
+    match last_token.token {
+        Token::If => return vec!["condition"],
+        Token::Then => return vec!["expression"],
+        _ => vec![],
+    }
 }

@@ -25,8 +25,7 @@ pub struct Backend {
     pub current_analysis: DashMap<Url, Analysis>,
     analysis_map: DashMap<String, Analysis>,
     document_map: DashMap<String, Rope>,
-    token_map: DashMap<String, (Vec<Token>, Vec<Range<usize>>)>,
-    // builtins: Vec<BuiltinEntry>,
+    token_map: DashMap<String, Vec<TokenData>>,
 }
 
 // Backend implementation for the language server
@@ -38,15 +37,14 @@ impl Backend {
             document_map: DashMap::new(),
             analysis_map: DashMap::new(),
             token_map: DashMap::new(),
-            // builtins: load_built_ins(),
         }
     }
     pub async fn change(&self, uri: Url, text: &String) {
         let rope = Rope::from_str(text);
         let mut diags = Vec::new();
         self.document_map.insert(uri.to_string(), rope);
-        self.token_map
-            .insert(uri.to_string(), tokenize(text, &mut diags));
+        let tokens = tokenize(text);
+        self.token_map.insert(uri.to_string(), tokens);
 
         match uri.to_file_path() {
             // Try to convert URI to file path, if it fails, log an error message and skip analysis
@@ -65,7 +63,7 @@ impl Backend {
                 if analysis.spec.is_some() {
                     self.analysis_map.insert(uri.to_string(), analysis.clone());
                 }
-
+                
                 self.client
                     .publish_diagnostics(uri.clone(), diags, None)
                     .await;
@@ -88,7 +86,13 @@ impl Backend {
 
         let analysis_ref = self.analysis_map.get(&uri_key)?;
         let analysis = analysis_ref.value();
-
+        let binding = self.token_map.get(&uri_key).unwrap();
+        let tokens = binding.value();
+        // log::info!("Tokens: {:?}", &tokens);
+        
+        let rope = self.document_map.get(&uri_key)?;
+        let _pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+        
         let mut items = Vec::new();
 
         // Collects and add input, output, aux variables and stream expressions
@@ -97,6 +101,9 @@ impl Backend {
             items.extend(item);
         }
 
+        
+        
+        
         // For the built in completion candidates to be available.
         let builtin_items: Vec<CompletionItem> = BUILTIN_REGISTRY
             .iter()
