@@ -113,6 +113,10 @@ pub enum Token {
     Latch,
     #[token("init")]
     Init,
+    #[token("monitored_at")]
+    MonitoredAt,
+    #[token("dist")]
+    Dist,
 
     // Types
     #[token("Int")]
@@ -123,8 +127,8 @@ pub enum Token {
     Bool,
     #[token("Str")]
     Str,
-    #[token("Unit")]
-    Unit,
+    // #[token("Unit")]
+    // Unit,
     #[token("List")]
     List,
     #[token("Map")]
@@ -181,6 +185,16 @@ pub enum Token {
     Comma,
     #[token(".")]
     Dot,
+    
+    //Math Functions
+    #[token("sin")]
+    Sin,
+    #[token("cos")]
+    Cos,
+    #[token("tan")]
+    Tan,
+    #[token("abs")]
+    Abs,
 
     // Identifiers and literals
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*")]
@@ -249,3 +263,5 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&st
         _ => vec![],
     }
 }
+
+
