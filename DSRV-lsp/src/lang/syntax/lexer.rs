@@ -134,7 +134,7 @@ pub enum Token {
     #[token("Map")]
     Map,
 
-    // Operators and punctuation
+    // Operators
     #[token("&&")]
     AndAnd,
     #[token("||")]
@@ -166,6 +166,7 @@ pub enum Token {
     #[token("%")]
     Percent,
     #[token("!")]
+    // Punctuation
     Bang,
     #[token("(")]
     LParen,
@@ -185,7 +186,7 @@ pub enum Token {
     Comma,
     #[token(".")]
     Dot,
-    
+
     //Math Functions
     #[token("sin")]
     Sin,
@@ -255,13 +256,40 @@ pub fn find_token_at_cursor(tokens: &[TokenData], cursor_offset: usize) -> Optio
         .last()
 }
 
-pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&str> {
-    let last_token = find_token_at_cursor(&tokens, cursor_offset).unwrap();
-    match last_token.token {
-        Token::If => return vec!["condition"],
-        Token::Then => return vec!["expression"],
-        _ => vec![],
-    }
+pub fn find_token_pair_at_cursor(tokens: &[TokenData], cursor_offset: usize) -> Vec<&TokenData> {
+    tokens
+        .iter()
+        // We look for tokens that end before or exactly at the cursor
+        .filter(|t| t.span.end <= cursor_offset)
+        .rev()
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
 }
 
+pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&str> {
+    let mut context = Vec::new();
 
+    let last_pair = find_token_pair_at_cursor(&tokens, cursor_offset);
+    let last_token = last_pair.last().unwrap();
+
+    match last_token.token {
+        Token::Dot =>{ match last_pair.first().unwrap().token {
+            Token::List => context.push("list method"),
+            Token::Map => context.push("map method"),
+            _ => {}
+        }
+      },
+        
+      Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::Comma | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang => context.push("expr"),
+      
+      
+      Token::In | Token::Aux | Token::Out | Token::Var => context.push("variable"),
+      
+        
+        _ => context.push("toplevel"),
+    }
+    context
+}

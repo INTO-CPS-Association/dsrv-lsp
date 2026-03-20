@@ -6,7 +6,7 @@ use trustworthiness_checker::lang::dsrv::{
     ast::{DsrvSpecification, SpannedExpr},
     lalr::TopDeclsParser,
     lalr_parser::create_dsrv_spec,
-    type_checker::TypedDsrvSpecification,
+    type_checker::{TypedDsrvSpecification, type_check},
 };
 
 // dynamic_lola::{
@@ -35,6 +35,20 @@ impl Analysis {
                     extract_nodes(expr, &mut nodes);
                 }
                 // log::info!("Extracted spanned nodes: {:#?}", nodes);
+                // match type_check(spec.clone()) {
+                //     Ok(s) => {
+                //         log::info!("Type checked specification: {:#?}", s);
+                //         Analysis {
+                //             spec: Some(spec.clone()),
+                //             typed: Some(s),
+                //             diags: vec![],
+                //             spanned_nodes: nodes.clone(),
+                //         };
+                //     }
+                //     Err(errs) => {
+                //         log::error!("Type checking errors: {:#?}", errs);
+                //     }
+                // }
 
                 Analysis {
                     spec: Some(spec.clone()),

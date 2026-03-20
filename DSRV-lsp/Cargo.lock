@@ -2215,7 +2215,7 @@ dependencies = [
 [[package]]
 name = "trustworthiness_checker"
 version = "0.1.0"
-source = "git+https://github.com/EmmiPigen/robosapiens-trustworthiness-checker#8317e40240b055737c21c722f817524dd318b545"
+source = "git+https://github.com/EmmiPigen/robosapiens-trustworthiness-checker?branch=Typed_with_Spans#ba123cc907ff08d4066a09a7393c1b04df2e50ea"
 dependencies = [
  "anyhow",
  "approx",

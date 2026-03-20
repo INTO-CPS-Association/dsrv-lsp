@@ -15,7 +15,6 @@ use crate::lang::syntax::lexer::*;
 use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
-use std::ops::Range;
 use tower_lsp::Client;
 use tower_lsp::lsp_types::*;
 use trustworthiness_checker::{DsrvSpecification, VarName};
@@ -88,10 +87,12 @@ impl Backend {
         let analysis = analysis_ref.value();
         let binding = self.token_map.get(&uri_key).unwrap();
         let tokens = binding.value();
-        // log::info!("Tokens: {:?}", &tokens);
-        
+                
         let rope = self.document_map.get(&uri_key)?;
-        let _pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+        let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+        
+        let context = filter_suggestions(pos_offset as usize, tokens);
+        
         
         let mut items = Vec::new();
 
@@ -106,7 +107,8 @@ impl Backend {
         
         // For the built in completion candidates to be available.
         let builtin_items: Vec<CompletionItem> = BUILTIN_REGISTRY
-            .iter()
+            .iter().filter(|builtin| builtin.trigger_context.contains(&context[0])
+            )
             .map(|builtin| CompletionItem {
                 label: builtin.label.to_string(),
                 kind: Some(builtin.kind),
