@@ -10,7 +10,7 @@
  */
 
 use crate::lang::analyzer::*;
-use crate::lang::syntax::completion_candidates::*;
+use crate::lang::syntax::completions_list::*;
 use crate::lang::syntax::lexer::*;
 use crate::utils::pos_to_offset;
 use dashmap::DashMap;
