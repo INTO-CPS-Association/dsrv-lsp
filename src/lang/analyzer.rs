@@ -28,13 +28,13 @@ impl Analysis {
             Ok(stmts) => {
                 let spec = create_dsrv_spec(&stmts);
                 // log::info!("Parsed specification: {:#?}", spec);
-
                 let mut nodes = Vec::new();
 
                 for (_name, expr) in &spec.exprs {
                     extract_nodes(expr, &mut nodes);
                 }
                 // log::info!("Extracted spanned nodes: {:#?}", nodes);
+                
                 // match type_check(spec.clone()) {
                 //     Ok(s) => {
                 //         log::info!("Type checked specification: {:#?}", s);

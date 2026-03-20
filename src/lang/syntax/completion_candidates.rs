@@ -337,4 +337,6 @@ pub static BUILTIN_REGISTRY: &[DsrvBuiltIn] = &[
         detail: "!ψ",
         documentation: "Logical negation operator, inverts a boolean stream value",
     },
+    
+    
 ];

@@ -25,10 +25,10 @@ impl LanguageServer for Backend {
                 )),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
-                    trigger_characters: Some(vec![".".to_string()]),
                     all_commit_characters: None,
                     completion_item: None,
                     work_done_progress_options: Default::default(),
+                    ..Default::default()
                 }),
 
                 hover_provider: Some(HoverProviderCapability::Options(HoverOptions {

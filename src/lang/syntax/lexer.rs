@@ -273,23 +273,28 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&st
     let mut context = Vec::new();
 
     let last_pair = find_token_pair_at_cursor(&tokens, cursor_offset);
-    let last_token = last_pair.last().unwrap();
+    
+    let first_token = last_pair.first().unwrap();
 
-    match last_token.token {
-        Token::Dot =>{ match last_pair.first().unwrap().token {
-            Token::List => context.push("list method"),
-            Token::Map => context.push("map method"),
-            _ => {}
+    match first_token.token {
+      Token::List => {
+        if last_pair.last().unwrap().token == Token::Dot {
+            context.push("list method")
         }
       },
-        
+      Token::Map => {
+        if last_pair.last().unwrap().token == Token::Dot {
+            context.push("map method")
+        }
+      },
+    
       Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::Comma | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang => context.push("expr"),
       
       
-      Token::In | Token::Aux | Token::Out | Token::Var => context.push("variable"),
+      Token::In | Token::Aux | Token::Out | Token::Var => context.push("_"),
       
         
-        _ => context.push("toplevel"),
-    }
+        _ => context.extend(["toplevel", "variable"]),
+    } 
     context
 }

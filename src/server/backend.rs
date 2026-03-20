@@ -5,7 +5,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License.
  *
- * This project utilizes the 'trustworthiness-checker' crate, which is 
+ * This project utilizes the 'trustworthiness-checker' crate, which is
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
@@ -62,7 +62,7 @@ impl Backend {
                 if analysis.spec.is_some() {
                     self.analysis_map.insert(uri.to_string(), analysis.clone());
                 }
-                
+
                 self.client
                     .publish_diagnostics(uri.clone(), diags, None)
                     .await;
@@ -87,28 +87,18 @@ impl Backend {
         let analysis = analysis_ref.value();
         let binding = self.token_map.get(&uri_key).unwrap();
         let tokens = binding.value();
-                
+
         let rope = self.document_map.get(&uri_key)?;
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
-        
+
         let context = filter_suggestions(pos_offset as usize, tokens);
-        
-        
+        log::info!("Context for completion at offset {}: {:?}", pos_offset, context);
         let mut items = Vec::new();
 
-        // Collects and add input, output, aux variables and stream expressions
-        if let Some(spec) = &analysis.spec {
-            let item = get_all_declared_symbols(&spec);
-            items.extend(item);
-        }
-
-        
-        
-        
         // For the built in completion candidates to be available.
         let builtin_items: Vec<CompletionItem> = BUILTIN_REGISTRY
-            .iter().filter(|builtin| builtin.trigger_context.contains(&context[0])
-            )
+            .iter()
+            .filter(|builtin| builtin.trigger_context.contains(&context[0]))
             .map(|builtin| CompletionItem {
                 label: builtin.label.to_string(),
                 kind: Some(builtin.kind),
@@ -122,28 +112,39 @@ impl Backend {
                 ..Default::default()
             })
             .collect();
-
         items.extend(builtin_items);
+        
+        // Collects and add input, output, aux variables and stream expressions
+        if let Some(spec) = &analysis.spec {
+            let variables = get_all_declared_symbols(&spec);
+            let vars: Vec<CompletionItem> = variables.iter().filter(|variables| variables.trigger_context.contains(&context[0])).map(|var| CompletionItem {
+              label: var.label.to_string(),
+              kind: Some(var.kind),
+              detail: Some(var.detail.to_string()),
+              ..Default::default()
+            }).collect();
+            items.extend(vars);
+        }
+        
+        
 
         return Some(items);
     }
 
     // TODO: Implement the hover handler to provide information about the symbol under the cursor based on the current position in the document after the AST structure is updated with spanned nodes
     pub fn provide_hover(&self, params: HoverParams) -> Option<Hover> {
-      let pos = params.text_document_position_params;
-      let uri_key = pos.text_document.uri.to_string();
-      
-      let analysis_ref = self.analysis_map.get(&uri_key)?;
-      let analysis = analysis_ref.value();
-      
-      let rope = self.document_map.get(&uri_key)?;
-      let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
-      
-      let node_at_offset = Analysis::node_at_offset(&analysis, pos_offset);
-      log::info!("Node at offset {}: {:?}", pos_offset, node_at_offset);
-      
-      
-      
+        let pos = params.text_document_position_params;
+        let uri_key = pos.text_document.uri.to_string();
+
+        let analysis_ref = self.analysis_map.get(&uri_key)?;
+        let analysis = analysis_ref.value();
+
+        let rope = self.document_map.get(&uri_key)?;
+        let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+
+        let node_at_offset = Analysis::node_at_offset(&analysis, pos_offset);
+        log::info!("Node at offset {}: {:?}", pos_offset, node_at_offset);
+
         // let pos = params.text_document_position_params;
         // let uri_key = pos.text_document.uri.to_string();
 
@@ -177,32 +178,49 @@ fn _pos_to_slice(pos: Position, rope: &Rope) -> Option<String> {
     Some(line.to_string())
 }
 
+#[derive(Debug, Clone)]
+pub struct Variables {
+    pub label: String,
+    pub kind: CompletionItemKind,
+    pub trigger_context: &'static [&'static str],
+    pub type_anno: Option<String>,
+    pub detail: String,
+}
+
 // Convert specification items into completion items for autocompletion
-fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<CompletionItem> {
+fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
     let mut items = Vec::new();
+
     for name in &spec.input_vars {
-        items.push(create_item(
-            name,
-            CompletionItemKind::VARIABLE,
-            "Input Stream",
-        ));
+        let item = Variables {
+            label: name.into(),
+            kind: CompletionItemKind::VARIABLE,
+            trigger_context: &["expr", "input_stream", "variable"],
+            type_anno: None,
+            detail: "Input Stream".to_string(),
+        };
+        items.push(item);
     }
     for name in &spec.output_vars {
-        items.push(create_item(
-            name,
-            CompletionItemKind::VARIABLE,
-            "Output Stream",
-        ));
+        let item = Variables {
+            label: name.into(),
+            kind: CompletionItemKind::VARIABLE,
+            trigger_context: &["expr", "output_stream", "variable"],
+            type_anno: None,
+            detail: "Output Stream".to_string(),
+        };
+        items.push(item);
     }
-
     for name in &spec.aux_info {
-        items.push(create_item(
-            name,
-            CompletionItemKind::VARIABLE,
-            "Stream Variables",
-        ));
+        let item = Variables {
+            label: name.into(),
+            kind: CompletionItemKind::VARIABLE,
+            trigger_context: &["expr", "aux_stream", "variable"],
+            type_anno: None,
+            detail: "Auxiliary internal stream variable".to_string(),
+        };
+        items.push(item);
     }
-
     items
 }
 
