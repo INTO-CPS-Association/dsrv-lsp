@@ -127,8 +127,8 @@ pub enum Token {
     Bool,
     #[token("Str")]
     Str,
-    // #[token("Unit")]
-    // Unit,
+    #[token("Unit")]
+    Unit,
     #[token("List")]
     List,
     #[token("Map")]
@@ -273,7 +273,7 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&st
     let mut context = Vec::new();
 
     let last_pair = find_token_pair_at_cursor(&tokens, cursor_offset);
-    
+    log::info!("Tokens at cursor: {:?}", last_pair);
     let first_token = last_pair.first().unwrap();
 
     match first_token.token {
