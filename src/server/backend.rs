@@ -19,6 +19,15 @@ use tower_lsp::Client;
 use tower_lsp::lsp_types::*;
 use trustworthiness_checker::{DsrvSpecification, VarName};
 
+macro_rules! documentation {
+    ($value:expr) => {
+        Some(Documentation::MarkupContent(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: $value.to_string(),
+        }))
+    };
+}
+
 pub struct Backend {
     pub client: Client,
     pub current_analysis: DashMap<Url, Analysis>,
@@ -92,41 +101,32 @@ impl Backend {
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
 
         let context = filter_suggestions(pos_offset as usize, tokens);
-        log::info!("Context for completion at offset {}: {:?}", pos_offset, context);
+        // log::info!("Context for completion at offset {}: {:?}", pos_offset, context);
         let mut items = Vec::new();
 
         // For the built in completion candidates to be available.
         let builtin_items: Vec<CompletionItem> = BUILTIN_REGISTRY
             .iter()
             .filter(|builtin| builtin.trigger_context.contains(&context[0]))
-            .map(|builtin| CompletionItem {
-                label: builtin.label.to_string(),
-                kind: Some(builtin.kind),
-                detail: Some(builtin.detail.to_string()),
-                insert_text: Some(builtin.insert_text.to_string()),
-                insert_text_format: Some(builtin.insert_text_format),
-                documentation: Some(Documentation::MarkupContent(MarkupContent {
-                    kind: MarkupKind::Markdown,
-                    value: builtin.documentation.to_string(),
-                })),
-                ..Default::default()
-            })
+            .map(|builtin| create_item(builtin))
             .collect();
         items.extend(builtin_items);
-        
+
         // Collects and add input, output, aux variables and stream expressions
         if let Some(spec) = &analysis.spec {
             let variables = get_all_declared_symbols(&spec);
-            let vars: Vec<CompletionItem> = variables.iter().filter(|variables| variables.trigger_context.contains(&context[0])).map(|var| CompletionItem {
-              label: var.label.to_string(),
-              kind: Some(var.kind),
-              detail: Some(var.detail.to_string()),
-              ..Default::default()
-            }).collect();
+            let vars: Vec<CompletionItem> = variables
+                .iter()
+                .filter(|variables| variables.trigger_context.contains(&context[0]))
+                .map(|var| CompletionItem {
+                    label: var.label.to_string(),
+                    kind: Some(var.kind),
+                    detail: Some(var.detail.to_string()),
+                    ..Default::default()
+                })
+                .collect();
             items.extend(vars);
         }
-        
-        
 
         return Some(items);
     }
@@ -224,12 +224,14 @@ fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
     items
 }
 
-fn create_item(name: &VarName, kind: CompletionItemKind, detail: &str) -> CompletionItem {
+fn create_item(item: &DsrvBuiltIn) -> CompletionItem {
     CompletionItem {
-        label: name.to_string(),
-        kind: Some(kind),
-        detail: Some(detail.to_string()),
-        insert_text: Some(name.to_string()),
+        label: item.label.to_string(),
+        kind: Some(item.kind),
+        detail: Some(item.detail.to_string()),
+        insert_text: Some(item.insert_text.to_string()),
+        insert_text_format: Some(item.insert_text_format),
+        documentation: documentation!(item.documentation),
         ..Default::default()
     }
 }

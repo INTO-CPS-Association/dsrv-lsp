@@ -274,6 +274,7 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&st
 
     let last_pair = find_token_pair_at_cursor(&tokens, cursor_offset);
     log::info!("Tokens at cursor: {:?}", last_pair);
+    
     let first_token = last_pair.first().unwrap();
 
     match first_token.token {
@@ -290,6 +291,7 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&st
     
       Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::Comma | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang => context.push("expr"),
       
+      Token::Colon => context.push("type"),
       
       Token::In | Token::Aux | Token::Out | Token::Var => context.push("_"),
       
