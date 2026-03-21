@@ -256,47 +256,182 @@ pub fn find_token_at_cursor(tokens: &[TokenData], cursor_offset: usize) -> Optio
         .last()
 }
 
-pub fn find_token_pair_at_cursor(tokens: &[TokenData], cursor_offset: usize) -> Vec<&TokenData> {
-    tokens
+// pub fn find_token_pair_at_cursor(tokens: &[TokenData], cursor_offset: usize) -> Vec<&TokenData> {
+//     tokens
+//         .iter()
+//         // We look for tokens that end before or exactly at the cursor
+//         .filter(|t| t.span.end <= cursor_offset)
+//         .rev()
+//         .take(2)
+//         .collect::<Vec<_>>()
+//         .into_iter()
+//         .rev()
+//         .collect()
+// }
+// Helper function to get a slice of tokens around the cursor position for context-aware suggestions
+pub fn get_context_slice(tokens: &[TokenData], cursor_offset: usize, n: usize) -> Vec<&TokenData> {
+    // We look for tokens that end before or exactly at the cursor, take the last n tokens, and reverse them to maintain the original order
+    // let mut context: Vec<&TokenData> = tokens
+    //     .iter()
+    //     .filter(|t| t.span.end <= cursor_offset)
+    //     .rev()
+    //     .take(n + 1)
+    //     .collect();
+
+    let pos = tokens
         .iter()
-        // We look for tokens that end before or exactly at the cursor
-        .filter(|t| t.span.end <= cursor_offset)
-        .rev()
-        .take(2)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect()
+        .position(|t| t.span.start >= cursor_offset)
+        .unwrap_or(tokens.len());
+
+    // Look to see if the last token is an identifier, or literals and if true ignore it and take the previous token instead as the context for suggestions, this allows us to provide suggestions even when the user is in the middle of typing an identifier or a literal
+    let mut end_idx = pos;
+    if pos > 0 {
+        let last_token = &tokens[pos - 1];
+        match last_token.token {
+            Token::Identifier | Token::IntLiteral | Token::StringLiteral | Token::FloatLiteral => {
+                end_idx = pos - 1
+            }
+            _ => {}
+        }
+    }
+    let start_idx = end_idx.saturating_sub(n);
+    tokens[start_idx..end_idx].iter().collect()
 }
 
-pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&str> {
-    let mut context = Vec::new();
+// if let Some(last_token) = context.first() {
+//   if last_token.span.start < cursor_offset {
+//     match last_token.token {
+//       Token::Identifier | Token::IntLiteral | Token::StringLiteral | Token::FloatLiteral => context.remove(0),
+//       _ => {}
+//     }
+//   }
+// }
 
-    let last_pair = find_token_pair_at_cursor(&tokens, cursor_offset);
-    log::info!("Tokens at cursor: {:?}", last_pair);
-    
-    let first_token = last_pair.first().unwrap();
+// context.into_iter().take(n).rev().collect()
+// match idx {
+//     Some(i) => {
+//         let current = &tokens[i];
+//         let is_inside = cursor_offset < current.span.end;
 
-    match first_token.token {
-      Token::List => {
-        if last_pair.last().unwrap().token == Token::Dot {
-            context.push("list method")
+//         let end = if is_inside {
+//             match current.token {
+//                 Token::Identifier | Token::IntLiteral | Token::StringLiteral | Token::FloatLiteral => i.saturating_sub(1),
+//                 _ => i,
+//             }
+//         } else {
+//             i
+//         };
+
+//         let start = end.saturating_sub(n);
+//         &tokens[start..=end]
+//     }
+//     None => &[],
+// }
+
+pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'static str> {
+    let context_tokens = get_context_slice(&tokens, cursor_offset, 3);
+    log::info!("Tokens at cursor: {:?}", context_tokens);
+
+    let last_token = match context_tokens.last() {
+        Some(&t) => t,
+        None => {
+            return vec!["toplevel"];
         }
-      },
-      Token::Map => {
-        if last_pair.last().unwrap().token == Token::Dot {
-            context.push("map method")
+    };
+    match last_token.token {
+        Token::In | Token::Out | Token::Aux | Token::Var => {
+            vec!["_"]
         }
-      },
-    
-      Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::Comma | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang => context.push("expr"),
-      
-      Token::Colon => context.push("type"),
-      
-      Token::In | Token::Aux | Token::Out | Token::Var => context.push("_"),
-      
-        
-        _ => context.extend(["toplevel", "variable"]),
-    } 
-    context
+
+        Token::Colon | Token::Comma => {
+            vec!["type"]
+        }
+
+        Token::Dot => {
+            if context_tokens.len() >= 2 {
+                match context_tokens[context_tokens.len() - 2].token {
+                    Token::List => vec!["list method"],
+                    Token::Map => vec!["map method"],
+                    _ => vec![],
+                }
+            } else {
+                vec![]
+            }
+        }
+
+        #[rustfmt::skip]
+        // Expression Context
+        Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang | Token::Concat | Token::If | Token::Then | Token::Else => vec!["expr"],
+
+        _ => vec!["toplevel", "expr"],
+    }
+
+ 
 }
+
+// pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&str> {
+//     let mut context = Vec::new();
+
+//     let last_pair = find_token_pair_at_cursor(&tokens, cursor_offset);
+//     let last_token = last_pair.last().unwrap();
+
+//     match last_token.token {
+//         Token::Dot =>{ match last_pair.first().unwrap().token {
+//             Token::List => context.push("list method"),
+//             Token::Map => context.push("map method"),
+//             _ => {}
+//         }
+//       },
+
+//       Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::Comma | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang => context.push("expr"),
+
+//       Token::In | Token::Aux | Token::Out | Token::Var => context.push("variable"),
+
+//         _ => context.push("toplevel"),
+//     }
+//     context
+// }
+
+
+   // // let _first_token = context_tokens.first().unwrap();
+    // // let last_token = context_tokens.last().unwrap();
+
+    // match last_token.token {
+    //     //     match last_token.token {
+    //     //         Token::Dot =>{ match last_pair.first().unwrap().token {
+    //     //             Token::List => context.push("list method"),
+    //     //             Token::Map => context.push("map method"),
+    //     //             _ => {}
+    //     //         }
+    //     //       },
+    //     Token::In | Token::Out | Token::Aux | Token::Var => context.push("_"),
+
+    //     Token::Colon | Token::Comma => context.push("type"),
+
+    //     // Expression Context (Operators and Keywords)
+    //     Token::Eq
+    //     | Token::Plus
+    //     | Token::Minus
+    //     | Token::Star
+    //     | Token::Slash
+    //     | Token::Percent
+    //     | Token::LParen
+    //     | Token::LBracket
+    //     | Token::AndAnd
+    //     | Token::OrOr
+    //     | Token::Impl
+    //     | Token::EqEq
+    //     | Token::Le
+    //     | Token::Ge
+    //     | Token::Lt
+    //     | Token::Gt
+    //     | Token::Bang
+    //     | Token::Concat
+    //     | Token::If
+    //     | Token::Then
+    //     | Token::Else => context.push("expr"),
+
+    //     Token::List => context.extend(["list method", "contructor"]),
+
+    //     _ => context.extend(["toplevel", "variable"]),
+    // }

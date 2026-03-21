@@ -22,6 +22,7 @@ pub struct DsrvBuiltIn {
 pub static BUILTIN_REGISTRY: Lazy<Vec<DsrvBuiltIn>> = Lazy::new(|| {
     let mut v = Vec::new();
     v.extend_from_slice(keywords_and_types::CORE);
+    v.extend_from_slice(keywords_and_types::TYPES);
     v.extend_from_slice(list_and_map::LIST);
     v.extend_from_slice(list_and_map::MAP);
     v.extend_from_slice(math::MATH);

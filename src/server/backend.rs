@@ -17,7 +17,7 @@ use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp::Client;
 use tower_lsp::lsp_types::*;
-use trustworthiness_checker::{DsrvSpecification, VarName};
+use trustworthiness_checker::{DsrvSpecification};
 
 macro_rules! documentation {
     ($value:expr) => {
@@ -101,13 +101,13 @@ impl Backend {
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
 
         let context = filter_suggestions(pos_offset as usize, tokens);
-        // log::info!("Context for completion at offset {}: {:?}", pos_offset, context);
+        log::info!("Context for completion at offset {}: {:?}", pos_offset, context);
         let mut items = Vec::new();
 
         // For the built in completion candidates to be available.
         let builtin_items: Vec<CompletionItem> = BUILTIN_REGISTRY
             .iter()
-            .filter(|builtin| builtin.trigger_context.contains(&context[0]))
+            .filter(|builtin| context.iter().any(|c| builtin.trigger_context.contains(c)))
             .map(|builtin| create_item(builtin))
             .collect();
         items.extend(builtin_items);
@@ -117,7 +117,7 @@ impl Backend {
             let variables = get_all_declared_symbols(&spec);
             let vars: Vec<CompletionItem> = variables
                 .iter()
-                .filter(|variables| variables.trigger_context.contains(&context[0]))
+                .filter(|var| context.iter().any(|c| var.trigger_context.contains(c)))
                 .map(|var| CompletionItem {
                     label: var.label.to_string(),
                     kind: Some(var.kind),

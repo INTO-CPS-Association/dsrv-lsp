@@ -11,6 +11,16 @@ pub static FUNCTIONS: &[DsrvBuiltIn] = &[
         documentation: "Dynamic property which behaves like the most recent value of ψ or is `deferred (⊥)` if none has been sent",
     },
     DsrvBuiltIn {
+    label: "eval",
+    kind: CompletionItemKind::FUNCTION,
+    trigger_context: &["expr"],
+    insert_text: "eval($1)",
+    insert_text_format: InsertTextFormat::SNIPPET,
+    detail: "eval(ψ)",
+    documentation: "",
+    },
+    
+    DsrvBuiltIn {
         label: "If then else",
         kind: CompletionItemKind::SNIPPET,
         trigger_context: &["expr"],
