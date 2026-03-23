@@ -127,7 +127,7 @@ pub static MAP: &[DsrvBuiltIn] = &[
         trigger_context: &["map method"],
         insert_text: "has_key($1, $2)",
         insert_text_format: InsertTextFormat::SNIPPET,
-        detail: "Map.had_key(M, k)",
+        detail: "Map.has_key(M, k)",
         documentation: "Checks if the map has a value associated with the specified key",
     },
     DsrvBuiltIn {

@@ -1,12 +1,13 @@
 use crate::{lang::pattern_matching::extract_nodes, utils::*};
 use lalrpop_util::ParseError;
+use regex::Regex;
 use ropey::Rope;
 use tower_lsp::lsp_types::*;
 use trustworthiness_checker::lang::dsrv::{
     ast::{DsrvSpecification, SpannedExpr},
     lalr::TopDeclsParser,
     lalr_parser::create_dsrv_spec,
-    type_checker::{TypedDsrvSpecification, type_check},
+    type_checker::{SemanticError, TypedDsrvSpecification, type_check},
 };
 
 // dynamic_lola::{
@@ -34,22 +35,108 @@ impl Analysis {
                     extract_nodes(expr, &mut nodes);
                 }
                 // log::info!("Extracted spanned nodes: {:#?}", nodes);
-                
-                // match type_check(spec.clone()) {
-                //     Ok(s) => {
-                //         log::info!("Type checked specification: {:#?}", s);
-                //         Analysis {
-                //             spec: Some(spec.clone()),
-                //             typed: Some(s),
-                //             diags: vec![],
-                //             spanned_nodes: nodes.clone(),
-                //         };
-                //     }
-                //     Err(errs) => {
-                //         log::error!("Type checking errors: {:#?}", errs);
-                //     }
-                // }
 
+                if !(spec.type_annotations.is_empty()) {
+                    match type_check(spec.clone()) {
+                        Ok(s) => {
+                            log::info!("Type checked specification: {:#?}", s);
+                            Analysis {
+                                spec: Some(spec.clone()),
+                                typed: Some(s.clone()),
+                                diags: vec![],
+                                spanned_nodes: nodes.clone(),
+                            };
+                        }
+                        Err(errs) => {
+                            log::error!("Type checking errors: {:#?}", errs);
+
+                            let mut diags_vec: Vec<Diagnostic> = Vec::new();
+
+                            for error in errs {
+                                match error {
+                                    SemanticError::DeferredError(msg, span) => {
+                                        let rope = Rope::from_str(text);
+                                        let range = Range {
+                                            start: byte_to_pos(&rope, span.start as usize)
+                                                .unwrap_or_default(),
+                                            end: byte_to_pos(&rope, span.end as usize)
+                                                .unwrap_or_default(),
+                                        };
+                                        //"Stream expression {:?} not assigned a type before semantic analysis",
+                                    }
+                                    SemanticError::TypeError(msg, span) => {
+                                        let rope = Rope::from_str(text);
+                                        let range = Range {
+                                            start: byte_to_pos(&rope, span.start as usize)
+                                                .unwrap_or_default(),
+                                            end: byte_to_pos(&rope, span.end as usize)
+                                                .unwrap_or_default(),
+                                        };
+
+                                        let re = Regex::new(
+                                            r#"(\w+)\(Var\(VarName::new\("(\w+)"\)\)\)"#,
+                                        )
+                                        .unwrap();
+
+                                        let result =
+                                            re.replace_all(&msg, |caps: &regex::Captures| {
+                                                let var_type = match &caps[1] {
+                                                    "Int" => "integer",
+                                                    "Float" => "float",
+                                                    "Str" => "string",
+                                                    "Bool" => "bool",
+                                                    "Unit" => "Unit",
+                                                    _ => "unknown",
+                                                };
+                                                format!("{} `{}`", var_type, &caps[2])
+                                            });
+
+                                        diags_vec.push(Self::create_diag(&result, range));
+
+// "Numerical operation not valid on integers".into(),
+// "Numerical operation not valid on floats".into(),
+// "Cannot apply binary function {:?} to expressions of type {:?} and {:?}",
+// "Cannot create default-expression with two different types: {:?} and {:?}",
+// "Cannot create if-expression with two different types: {:?} and {:?}",
+// "If expression condition must be a boolean".into(),
+// "Mismatched type in Stream Index expression, expression and default does not match: {:?}",
+// "Type mismatch: expected {:?}, got {:?}",
+// "Type ascription required for dynamic"
+// "Expected Dynamic to be applied to a Str, got {:?}",
+// "Expected RestrictedDynamic to be applied to a Str, got {:?}",
+// "Type ascription required for restricted dynamic"
+// "Type ascription required for defer"
+// "Expected Defer to be applied to a Str, got {:?}",
+// "Not can only be applied to boolean expressions".into(),
+// "Init requires both arguments to have the same type, got {:?} and {:?}",
+// "Sin can only be applied to float expressions, got {:?}",
+// "Cos can only be applied to float expressions, got {:?}",
+// "Tan can only be applied to float expressions, got {:?}",
+// "Abs can only be applied to numeric expressions, got {:?}",
+                                    }
+                                    SemanticError::UndeclaredVariable(msg, span) => {
+                                        let rope = Rope::from_str(text);
+                                        let range = Range {
+                                            start: byte_to_pos(&rope, span.start as usize)
+                                                .unwrap_or_default(),
+                                            end: byte_to_pos(&rope, span.end as usize)
+                                                .unwrap_or_default(),
+                                        };
+                                        // "Usage of undeclared variable: {:?}",
+                                    }
+
+                                    _ => {}
+                                }
+                            }
+                            return Analysis {
+                                spec: Some(spec.clone()),
+                                typed: None,
+                                diags: diags_vec,
+                                spanned_nodes: nodes.clone(),
+                            };
+                        }
+                    }
+                }
                 Analysis {
                     spec: Some(spec.clone()),
                     typed: None,
