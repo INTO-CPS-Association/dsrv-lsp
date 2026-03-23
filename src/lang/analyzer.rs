@@ -7,6 +7,7 @@ use trustworthiness_checker::lang::dsrv::{
     ast::{DsrvSpecification, SpannedExpr},
     lalr::TopDeclsParser,
     lalr_parser::create_dsrv_spec,
+    span::Span,
     type_checker::{SemanticError, TypedDsrvSpecification, type_check},
 };
 
@@ -53,79 +54,20 @@ impl Analysis {
                             let mut diags_vec: Vec<Diagnostic> = Vec::new();
 
                             for error in errs {
+                                let rope = Rope::from_str(text);
                                 match error {
                                     SemanticError::DeferredError(msg, span) => {
-                                        let rope = Rope::from_str(text);
-                                        let range = Range {
-                                            start: byte_to_pos(&rope, span.start as usize)
-                                                .unwrap_or_default(),
-                                            end: byte_to_pos(&rope, span.end as usize)
-                                                .unwrap_or_default(),
-                                        };
-                                        //"Stream expression {:?} not assigned a type before semantic analysis",
+                                        diags_vec
+                                            .push(Self::create_semantic_diag(&rope, &msg, span));
                                     }
                                     SemanticError::TypeError(msg, span) => {
-                                        let rope = Rope::from_str(text);
-                                        let range = Range {
-                                            start: byte_to_pos(&rope, span.start as usize)
-                                                .unwrap_or_default(),
-                                            end: byte_to_pos(&rope, span.end as usize)
-                                                .unwrap_or_default(),
-                                        };
-
-                                        let re = Regex::new(
-                                            r#"(\w+)\(Var\(VarName::new\("(\w+)"\)\)\)"#,
-                                        )
-                                        .unwrap();
-
-                                        let result =
-                                            re.replace_all(&msg, |caps: &regex::Captures| {
-                                                let var_type = match &caps[1] {
-                                                    "Int" => "integer",
-                                                    "Float" => "float",
-                                                    "Str" => "string",
-                                                    "Bool" => "bool",
-                                                    "Unit" => "Unit",
-                                                    _ => "unknown",
-                                                };
-                                                format!("{} `{}`", var_type, &caps[2])
-                                            });
-
-                                        diags_vec.push(Self::create_diag(&result, range));
-
-// "Numerical operation not valid on integers".into(),
-// "Numerical operation not valid on floats".into(),
-// "Cannot apply binary function {:?} to expressions of type {:?} and {:?}",
-// "Cannot create default-expression with two different types: {:?} and {:?}",
-// "Cannot create if-expression with two different types: {:?} and {:?}",
-// "If expression condition must be a boolean".into(),
-// "Mismatched type in Stream Index expression, expression and default does not match: {:?}",
-// "Type mismatch: expected {:?}, got {:?}",
-// "Type ascription required for dynamic"
-// "Expected Dynamic to be applied to a Str, got {:?}",
-// "Expected RestrictedDynamic to be applied to a Str, got {:?}",
-// "Type ascription required for restricted dynamic"
-// "Type ascription required for defer"
-// "Expected Defer to be applied to a Str, got {:?}",
-// "Not can only be applied to boolean expressions".into(),
-// "Init requires both arguments to have the same type, got {:?} and {:?}",
-// "Sin can only be applied to float expressions, got {:?}",
-// "Cos can only be applied to float expressions, got {:?}",
-// "Tan can only be applied to float expressions, got {:?}",
-// "Abs can only be applied to numeric expressions, got {:?}",
+                                        diags_vec
+                                            .push(Self::create_semantic_diag(&rope, &msg, span));
                                     }
                                     SemanticError::UndeclaredVariable(msg, span) => {
-                                        let rope = Rope::from_str(text);
-                                        let range = Range {
-                                            start: byte_to_pos(&rope, span.start as usize)
-                                                .unwrap_or_default(),
-                                            end: byte_to_pos(&rope, span.end as usize)
-                                                .unwrap_or_default(),
-                                        };
-                                        // "Usage of undeclared variable: {:?}",
+                                        diags_vec
+                                            .push(Self::create_semantic_diag(&rope, &msg, span));
                                     }
-
-                                    _ => {}
                                 }
                             }
                             return Analysis {
@@ -210,4 +152,56 @@ impl Analysis {
             ..Default::default()
         }
     }
+
+    fn create_semantic_diag(rope: &Rope, msg: &str, span: Span) -> Diagnostic {
+        let range = Range {
+            start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
+            end: byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
+        };
+
+        let msg_formatted = regex_format(&msg);
+
+        Self::create_diag(&msg_formatted, range)
+    }
 }
+
+fn regex_format(msg: &str) -> String {
+    let re = Regex::new(r#"(\w+)\(Var\(VarName::new\("(\w+)"\)\)\)"#).unwrap();
+
+    let result = re.replace_all(&msg, |caps: &regex::Captures| {
+        let var_type = match &caps[1] {
+            "Int" => "integer",
+            "Float" => "float",
+            "Str" => "string",
+            "Bool" => "boolean",
+            "Unit" => "Unit",
+            _ => "unknown",
+        };
+        format!("{} `{}`", var_type, &caps[2])
+    });
+
+    result.into_owned().trim().to_string()
+}
+
+// "Numerical operation not valid on integers".into(),
+// "Numerical operation not valid on floats".into(),
+// "Cannot apply binary function {:?} to expressions of type {:?} and {:?}",
+// "Cannot create default-expression with two different types: {:?} and {:?}",
+// "Cannot create if-expression with two different types: {:?} and {:?}",
+// "If expression condition must be a boolean".into(),
+// "Mismatched type in Stream Index expression, expression and default does not match: {:?}",
+// "Type mismatch: expected {:?}, got {:?}",
+// "Type ascription required for dynamic"
+// "Expected Dynamic to be applied to a Str, got {:?}",
+// "Expected RestrictedDynamic to be applied to a Str, got {:?}",
+// "Type ascription required for restricted dynamic"
+// "Type ascription required for defer"
+// "Expected Defer to be applied to a Str, got {:?}",
+// "Not can only be applied to boolean expressions".into(),
+// "Init requires both arguments to have the same type, got {:?} and {:?}",
+// "Sin can only be applied to float expressions, got {:?}",
+// "Cos can only be applied to float expressions, got {:?}",
+// "Tan can only be applied to float expressions, got {:?}",
+// "Abs can only be applied to numeric expressions, got {:?}",
+// "Usage of undeclared variable: {:?}",
+//"Stream expression {:?} not assigned a type before semantic analysis",
