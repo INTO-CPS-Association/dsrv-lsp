@@ -77,7 +77,7 @@ impl LanguageServer for Backend {
         log::debug!("File Closed");
     }
     
-    // TODO: Implement the completion handler to provide context-aware suggestions based on the current position in the document after the AST structure is updated with spanned nodes
+    //Done: Added the trigger character "." to provide suggestions for fields and methods when the user types a dot after an expression, added all the built in functions and variables to the completion list, and added the ability to provide suggestions based on the current scope and context of the code being edited.
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let completion = self.get_completion(params);
         Ok(completion.map(CompletionResponse::Array))
