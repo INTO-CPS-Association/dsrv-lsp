@@ -178,7 +178,33 @@ fn regex_format(msg: &str) -> String {
             _ => "unknown",
         };
         format!("{} `{}`", var_type, &caps[2])
+    }).to_string();
+    
+    let re2 = Regex::new(r#"(\w+)\(Val\(Known\("*?(\w+)"*?\)\)\)"#).unwrap();
+    let result = re2.replace_all(&result, |caps: &regex::Captures| {
+        let var_type = match &caps[1] {
+            "Int" => "integer",
+            "Float" => "float",
+            "Str" => "string",
+            "Bool" => "boolean",
+            "Unit" => "Unit",
+            _ => "unknown",
+        };
+        format!("{} `{}`", var_type, &caps[2])
     });
+    
+    let re3 = Regex::new(r#"binary function (?P<kind>[SNB])Op\((\w+)\)"#).unwrap();
+    
+    let result = re3.replace_all(&result, |caps: &regex::Captures| {
+      let op_type = match &caps["kind"] {
+        "S" => "String",
+        "N" => "Numerical",
+        "B" => "Boolean",
+        _ => "unknown",
+      };
+       format!("`{} {}`", op_type, &caps[2]) 
+    });
+   
 
     result.into_owned().trim().to_string()
 }
