@@ -81,11 +81,6 @@ impl LanguageServer for Backend {
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let completion = self.get_completion(params);
         Ok(completion.map(CompletionResponse::Array))
-        // Ok(Some(CompletionResponse::Array(vec![
-        //     CompletionItem::new_simple("test".to_string(), "Some Detail".to_string()),
-        //     CompletionItem::new_simple("another".to_string(), "Another Detail".to_string()),
-        //     CompletionItem::new_simple("test2".to_string(), "Some Detail2".to_string()),
-        // ])))
     }
 
     // TODO: Implement the hover handler to provide information about the token under the cursor, such as its type and documentation, based on the AST structure with spanned nodes½
