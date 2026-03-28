@@ -70,8 +70,9 @@ pub static FUNCTIONS: &[DsrvBuiltIn] = &[
         trigger_context: &["expr"],
         insert_text: "latch($1, $2)",
         insert_text_format: InsertTextFormat::SNIPPET,
-        detail: "latch(v, t)",
-        documentation: "", //TODO: Add docstring for latch after speaking with T
+        detail: "latch(x, y)",
+        documentation: "A sample-and-hold latch, where x provides the values to be sampled while y controls when they are sampled.\n
+        When y provides a non-∄ value the latch samples the current value of x and holds that value until the next time y provides a non-∄ value. Otherwise, it evaluates to ∄, mirroring the semantics of an input stream w who receives the values of x but emits events only when y is non-∄", 
     },
     DsrvBuiltIn {
         label: "init",
@@ -79,28 +80,8 @@ pub static FUNCTIONS: &[DsrvBuiltIn] = &[
         trigger_context: &["expr"],
         insert_text: "init($1, $2)",
         insert_text_format: InsertTextFormat::SNIPPET,
-        detail: "init()",  //TODO: Add proper detail for init after speaking with T
-        documentation: "", //TODO: Add docstring for init after speaking with T
-    },
-    //TODO: Add monitored at after speaking with T about the semantics and signature of monitored at
-    DsrvBuiltIn {
-        label: "Monitored_at",
-        kind: CompletionItemKind::FUNCTION,
-        trigger_context: &["expr"],
-        insert_text: "",
-        insert_text_format: InsertTextFormat::SNIPPET,
-        detail: "",
-        documentation: "",
-    },
-    // TODO: Add dist after speaking with T about the semantics and signature of dist
-    DsrvBuiltIn {
-        label: "dist",
-        kind: CompletionItemKind::FUNCTION,
-        trigger_context: &["expr"],
-        insert_text: "",
-        insert_text_format: InsertTextFormat::SNIPPET,
-        detail: "",
-        documentation: "",
+        detail: "init(ψ, c)",
+        documentation: "Initializes the ψ stream with values from the c stream until ψ provides a value that is not `NoVal`. Then yields from ψ.",
     },
     DsrvBuiltIn {
         label: "SIndex",
@@ -137,5 +118,26 @@ pub static FUNCTIONS: &[DsrvBuiltIn] = &[
         insert_text_format: InsertTextFormat::SNIPPET,
         detail: "else ψ2",
         documentation: "Part of the if-then-else expression. It follows the then clause and introduces the expression that is returned when the condition is `false`.",
+    },
+];
+
+pub static DIST_FUNCTIONS: &[DsrvBuiltIn] = &[
+    DsrvBuiltIn {
+        label: "Monitored_at",
+        kind: CompletionItemKind::FUNCTION,
+        trigger_context: &["expr"],
+        insert_text: "Monitored_at($1, $2)",
+        insert_text_format: InsertTextFormat::SNIPPET,
+        detail: "Monitored_at(v, n)",
+        documentation: "Returns a boolean stream that continuously evaluates to `true` if the variable `v` is currently being monitored by the computational node `n` in the distributed graph, and `false` otherwise.",
+    },
+    DsrvBuiltIn {
+        label: "dist",
+        kind: CompletionItemKind::FUNCTION,
+        trigger_context: &["expr"],
+        insert_text: "Dist($1, $2)",
+        insert_text_format: InsertTextFormat::SNIPPET,
+        detail: "Dist(u, v)",
+        documentation: "Returns an integer stream representing the shortest topological distance between two entities (`u` and `v`) in the dynamically evolving distributed network graph. Both `u` and `v` can be either a variable name or a node name.",
     },
 ];

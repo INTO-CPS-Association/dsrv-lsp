@@ -27,6 +27,7 @@ pub static BUILTIN_REGISTRY: Lazy<Vec<DsrvBuiltIn>> = Lazy::new(|| {
     v.extend_from_slice(list_and_map::MAP);
     v.extend_from_slice(math::MATH);
     v.extend_from_slice(functions::FUNCTIONS);
+    v.extend_from_slice(functions::DIST_FUNCTIONS);
     
     v
 });

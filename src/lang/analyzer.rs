@@ -29,7 +29,7 @@ impl Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
                 let spec = create_dsrv_spec(&stmts);
-                // log::info!("Parsed specification: {:#?}", spec);
+                log::info!("Parsed specification: {:#?}", spec);
                 let mut nodes = Vec::new();
 
                 for (_name, expr) in &spec.exprs {
@@ -41,7 +41,7 @@ impl Analysis {
                     match type_check(spec.clone()) {
                         Ok(s) => {
                             log::info!("Type checked specification: {:#?}", s);
-                            Analysis {
+                            return Analysis {
                                 spec: Some(spec.clone()),
                                 typed: Some(s.clone()),
                                 diags: vec![],
@@ -168,18 +168,20 @@ impl Analysis {
 fn regex_format(msg: &str) -> String {
     let re = Regex::new(r#"(\w+)\(Var\(VarName::new\("(\w+)"\)\)\)"#).unwrap();
 
-    let result = re.replace_all(&msg, |caps: &regex::Captures| {
-        let var_type = match &caps[1] {
-            "Int" => "integer",
-            "Float" => "float",
-            "Str" => "string",
-            "Bool" => "boolean",
-            "Unit" => "Unit",
-            _ => "unknown",
-        };
-        format!("{} `{}`", var_type, &caps[2])
-    }).to_string();
-    
+    let result = re
+        .replace_all(&msg, |caps: &regex::Captures| {
+            let var_type = match &caps[1] {
+                "Int" => "integer",
+                "Float" => "float",
+                "Str" => "string",
+                "Bool" => "boolean",
+                "Unit" => "Unit",
+                _ => "unknown",
+            };
+            format!("{} `{}`", var_type, &caps[2])
+        })
+        .to_string();
+
     let re2 = Regex::new(r#"(\w+)\(Val\(Known\("*?(\w+)"*?\)\)\)"#).unwrap();
     let result = re2.replace_all(&result, |caps: &regex::Captures| {
         let var_type = match &caps[1] {
@@ -192,19 +194,18 @@ fn regex_format(msg: &str) -> String {
         };
         format!("{} `{}`", var_type, &caps[2])
     });
-    
+
     let re3 = Regex::new(r#"binary function (?P<kind>[SNB])Op\((\w+)\)"#).unwrap();
-    
+
     let result = re3.replace_all(&result, |caps: &regex::Captures| {
-      let op_type = match &caps["kind"] {
-        "S" => "String",
-        "N" => "Numerical",
-        "B" => "Boolean",
-        _ => "unknown",
-      };
-       format!("`{} {}`", op_type, &caps[2]) 
+        let op_type = match &caps["kind"] {
+            "S" => "String",
+            "N" => "Numerical",
+            "B" => "Boolean",
+            _ => "unknown",
+        };
+        format!("`{} {}`", op_type, &caps[2])
     });
-   
 
     result.into_owned().trim().to_string()
 }
@@ -231,3 +232,54 @@ fn regex_format(msg: &str) -> String {
 // "Abs can only be applied to numeric expressions, got {:?}",
 // "Usage of undeclared variable: {:?}",
 //"Stream expression {:?} not assigned a type before semantic analysis",
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_analyze_syntax_valid_input_not_typed() {
+        let input = "in x\nin y\nout z\n\nz = x + y";
+        let analysis = Analysis::analyze_2_point_0(input).await;
+
+        assert!(
+            analysis.diags.is_empty(),
+            "Expected no diagnostics for valid input, but got: {:?}",
+            analysis.diags
+        );
+
+        assert!(
+            analysis.spec.is_some(),
+            "Expected spec to be Some for valid input"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_analyze_syntax_valid_input_typed() {
+        let input2 = "in x: Int\nin y: Int\nout z: Int\n\nz = x + y";
+        let analysis = Analysis::analyze_2_point_0(input2).await;
+
+        // println!("Analysis result: {:#?}", analysis.clone());
+
+        assert!(
+            analysis.diags.is_empty(),
+            "Expected no diagnostics for valid input, but got: {:?}",
+            analysis.diags
+        );
+
+        assert!(
+            analysis.spec.as_ref().unwrap().type_annotations.len() == 3,
+            "Expected 3 type annotations, but got: {:?}",
+            analysis.spec.as_ref().unwrap().type_annotations.len()
+        );
+
+        assert!(
+            analysis.typed.is_some(),
+            "Expected typed to be Some for valid input with type annotations, got: {:?}",
+            analysis.typed
+        );
+    }
+    
+    
+    
+}
