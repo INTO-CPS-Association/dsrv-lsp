@@ -2,7 +2,8 @@ use crate::{lang::pattern_matching::extract_nodes, utils::*};
 use lalrpop_util::ParseError;
 use regex::Regex;
 use ropey::Rope;
-use tower_lsp::lsp_types::*;
+// use tower_lsp::lsp_types::*;
+use tower_lsp_server::ls_types::*;
 use trustworthiness_checker::lang::dsrv::{
     ast::{DsrvSpecification, SpannedExpr},
     lalr::TopDeclsParser,

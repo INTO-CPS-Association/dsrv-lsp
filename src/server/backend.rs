@@ -15,8 +15,9 @@ use crate::lang::syntax::lexer::*;
 use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
-use tower_lsp::Client;
-use tower_lsp::lsp_types::*;
+// use tower_lsp::Client;
+// use tower_lsp::lsp_types::*;
+use tower_lsp_server::{Client, ls_types::*};
 use trustworthiness_checker::{DsrvSpecification};
 
 macro_rules! documentation {
@@ -30,7 +31,7 @@ macro_rules! documentation {
 
 pub struct Backend {
     pub client: Client,
-    pub current_analysis: DashMap<Url, Analysis>,
+    pub current_analysis: DashMap<Uri, Analysis>,
     analysis_map: DashMap<String, Analysis>,
     document_map: DashMap<String, Rope>,
     token_map: DashMap<String, Vec<TokenData>>,
@@ -47,7 +48,7 @@ impl Backend {
             token_map: DashMap::new(),
         }
     }
-    pub async fn change(&self, uri: Url, text: &String) {
+    pub async fn change(&self, uri: Uri, text: &String) {
         let rope = Rope::from_str(text);
         let mut diags = Vec::new();
         self.document_map.insert(uri.to_string(), rope);
@@ -56,9 +57,9 @@ impl Backend {
 
         match uri.to_file_path() {
             // Try to convert URI to file path, if it fails, log an error message and skip analysis
-            Ok(_path) => {
+            Some(_path) => {
                 // If URI is successfully converted to file path, proceed with analysis
-                self.logger(format!("Analyzing document `{}`", uri), MessageType::INFO)
+                self.logger(format!("Analyzing document `{:?}`", uri), MessageType::INFO)
                     .await;
 
                 let analysis = Analysis::analyze_2_point_0(&text).await;
@@ -76,10 +77,10 @@ impl Backend {
                     .publish_diagnostics(uri.clone(), diags, None)
                     .await;
             }
-            Err(_path) => {
+            None => {
                 // If URI conversion fails, log an error message and skip analysis
                 self.logger(
-                    format!("Failed to convert URI `{}` to file path", uri),
+                    format!("Failed to convert URI `{:?}` to file path", uri),
                     MessageType::ERROR,
                 )
                 .await;

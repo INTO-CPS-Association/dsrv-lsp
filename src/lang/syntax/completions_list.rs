@@ -5,7 +5,8 @@ pub mod math;
 
 use once_cell::sync::Lazy;
 
-use tower_lsp::lsp_types::*;
+// use tower_lsp::lsp_types::*;
+use tower_lsp_server::ls_types::{CompletionItemKind, InsertTextFormat};
 
 
 #[derive(Debug, Clone)]

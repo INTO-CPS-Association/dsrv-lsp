@@ -1,9 +1,10 @@
-use tower_lsp::LanguageServer;
-use tower_lsp::lsp_types::*;
+// use tower_lsp::LanguageServer;
+// use tower_lsp::lsp_types::*;
+use tower_lsp_server::{LanguageServer, ls_types::*, jsonrpc::Result};
 use crate::server::backend::Backend;
-use tower_lsp::jsonrpc::Result;
+// use tower_lsp::jsonrpc::Result;
 
-#[tower_lsp::async_trait]
+// #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
@@ -46,6 +47,7 @@ impl LanguageServer for Backend {
 
                 ..ServerCapabilities::default()
             },
+            ..Default::default()
         })
     }
 

@@ -1,7 +1,8 @@
 use crate::utils::byte_to_pos;
 use logos::{Lexer, Logos};
 use ropey::Rope;
-use tower_lsp::lsp_types::{Diagnostic, Range};
+// use tower_lsp::lsp_types::{Diagnostic, Range};
+use tower_lsp_server::ls_types::{Diagnostic, Range};
 
 // Custom function to handle block comments, allowing for nested block comments
 fn lex_block_comment(lex: &mut Lexer<Token>) -> Result<(), LexerError> {
