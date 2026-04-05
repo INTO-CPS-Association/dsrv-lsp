@@ -230,7 +230,7 @@ pub fn tokenize(text: &str) -> Vec<TokenData> {
 
         match token_result {
             Ok(t) => {
-                if t != Token::Whitespace && t != Token::LineComment && t != Token::BlockComment {
+                if /* t != Token::Whitespace &&  */t != Token::LineComment && t != Token::BlockComment {
                     tokens.push(TokenData {
                         token: t,
                         content,
@@ -314,12 +314,22 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'s
 
         #[rustfmt::skip]
         // Expression Context
-        Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang | Token::Concat | Token::If | Token::Then | Token::Else => vec!["expr"],
- -
-        //Newline 
-        Token::RParan | Token::RBracket | Token::Identifier | Token::StringLiteral | Token::FloatLiteral | Token::IntLiteral => vec!["toplevel"],
+        Token::Whitespace => { 
+          // If the last token is whitespace, we check the token before that to determine the context and provide suggestions accordingly, this allows us to provide suggestions even when the user has just typed a token and is about to type the next one
+          if context_tokens.len() >= 2 {
+            match context_tokens[context_tokens.len() - 2].token {
+              Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang | Token::Concat | Token::If | Token::Then | Token::Else => vec!["expr"],
+              
+              //Newline only toplevel (in, out, aux, and output and aux variables)
+              Token::RParen | Token::RBracket | Token::Identifier | Token::StringLiteral | Token::FloatLiteral | Token::IntLiteral => vec!["toplevel", "output_stream", "aux_stream"],
+            _ => vec!["toplevel", "expr"],
+            }
+          }
+          else {
+            vec!["toplevel", "output_stream", "aux_stream"]
+          }
+        },
         
-        _ => vec!["toplevel", "expr"],
-    }
+        _ => vec!["toplevel", "expr"]
 }
-
+}
