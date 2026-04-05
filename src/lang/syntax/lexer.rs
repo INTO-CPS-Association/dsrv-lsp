@@ -315,7 +315,10 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'s
         #[rustfmt::skip]
         // Expression Context
         Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang | Token::Concat | Token::If | Token::Then | Token::Else => vec!["expr"],
-
+ -
+        //Newline 
+        Token::RParan | Token::RBracket | Token::Identifier | Token::StringLiteral | Token::FloatLiteral | Token::IntLiteral => vec!["toplevel"],
+        
         _ => vec!["toplevel", "expr"],
     }
 }
