@@ -29,6 +29,12 @@ pub static BUILTIN_REGISTRY: Lazy<Vec<DsrvBuiltIn>> = Lazy::new(|| {
     v.extend_from_slice(math::MATH);
     v.extend_from_slice(functions::FUNCTIONS);
     v.extend_from_slice(functions::DIST_FUNCTIONS);
-    
+
     v
 });
+
+pub fn get_builtin_by_label(label_name: &str) -> Option<&DsrvBuiltIn> {
+    BUILTIN_REGISTRY
+        .iter()
+        .find(|item| item.label == label_name)
+}

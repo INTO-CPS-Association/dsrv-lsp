@@ -2,6 +2,15 @@ use super::*;
 
 pub static MATH: &[DsrvBuiltIn] = &[
     DsrvBuiltIn {
+        label: "sin",
+        kind: CompletionItemKind::FUNCTION,
+        trigger_context: &["expr"],
+        insert_text: "sin($1)",
+        insert_text_format: InsertTextFormat::SNIPPET,
+        detail: "sin(e)",
+        documentation: "Gives the sinus of the given value",
+    },
+    DsrvBuiltIn {
         label: "cos",
         kind: CompletionItemKind::FUNCTION,
         trigger_context: &["expr"],

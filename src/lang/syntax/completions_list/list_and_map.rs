@@ -2,7 +2,7 @@ use super::*;
 
 pub static LIST: &[DsrvBuiltIn] = &[
     DsrvBuiltIn {
-        label: "List",
+        label: "List()",
         kind: CompletionItemKind::CONSTRUCTOR,
         trigger_context: &["expr"],
         insert_text: "List($1)",
@@ -11,12 +11,12 @@ pub static LIST: &[DsrvBuiltIn] = &[
         documentation: "Constructs a new List container from a comma-separated sequence of stream expressions.",
     },
     DsrvBuiltIn {
-        label: "List",
+        label: "List.",
         kind: CompletionItemKind::CLASS,
         trigger_context: &["expr"],
         insert_text: "List",
         insert_text_format: InsertTextFormat::PLAIN_TEXT,
-        detail: "List",
+        detail: "List.",
         documentation: "The List type, to be called with methods like List.get, List.append, etc.",
     },
     DsrvBuiltIn {
@@ -129,14 +129,5 @@ pub static MAP: &[DsrvBuiltIn] = &[
         insert_text_format: InsertTextFormat::SNIPPET,
         detail: "Map.has_key(M, k)",
         documentation: "Checks if the map has a value associated with the specified key",
-    },
-    DsrvBuiltIn {
-        label: "sin",
-        kind: CompletionItemKind::FUNCTION,
-        trigger_context: &["expr"],
-        insert_text: "sin($1)",
-        insert_text_format: InsertTextFormat::SNIPPET,
-        detail: "sin(e)",
-        documentation: "Gives the sinus of the given value",
     },
 ];
