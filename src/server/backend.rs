@@ -12,13 +12,15 @@
 use crate::lang::analyzer::*;
 use crate::lang::syntax::completions_list::*;
 use crate::lang::syntax::lexer::*;
+use crate::utils::byte_to_pos;
 use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
 // use tower_lsp::Client;
 // use tower_lsp::lsp_types::*;
 use tower_lsp_server::{Client, ls_types::*};
-use trustworthiness_checker::{DsrvSpecification};
+use trustworthiness_checker::DsrvSpecification;
+use trustworthiness_checker::lang::dsrv::{ast::SExpr, span::Span};
 
 macro_rules! documentation {
     ($value:expr) => {
@@ -26,6 +28,14 @@ macro_rules! documentation {
             kind: MarkupKind::Markdown,
             value: $value.to_string(),
         }))
+    };
+}
+macro_rules! hoverDoc {
+    ($value:expr) => {
+        HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: $value.to_string(),
+        })
     };
 }
 
@@ -93,16 +103,25 @@ impl Backend {
         let pos = params.text_document_position;
         let uri_key = pos.text_document.uri.to_string();
 
+        // For the variables
         let analysis_ref = self.analysis_map.get(&uri_key)?;
         let analysis = analysis_ref.value();
+
+        // for the tokens to make the context
         let binding = self.token_map.get(&uri_key).unwrap();
         let tokens = binding.value();
 
+        // For the rope to get the position offset for the context
         let rope = self.document_map.get(&uri_key)?;
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
 
+        // For the context
         let context = filter_suggestions(pos_offset as usize, tokens);
-        log::info!("Context for completion at offset {}: {:?}", pos_offset, context);
+        log::info!(
+            "Context for completion at offset {}: {:?}",
+            pos_offset,
+            context
+        );
         let mut items = Vec::new();
 
         // For the built in completion candidates to be available.
@@ -145,25 +164,136 @@ impl Backend {
 
         let node_at_offset = Analysis::node_at_offset(&analysis, pos_offset);
         log::info!("Node at offset {}: {:?}", pos_offset, node_at_offset);
+        
+        if node_at_offset.is_none() {
+            log::info!("No node found at offset {}, cannot provide hover information", pos_offset);
+            return None;
+        }
+        
+        // Match the node at the current offset with the corresponding built-in function to provide hover information. If the node is not a built-in function, return None to indicate that no hover information is available for that symbol.
+        let builtin: &DsrvBuiltIn;
+        match node_at_offset.unwrap().node {
+            SExpr::RestrictedDynamic(..) | SExpr::Dynamic(..) => {
+                builtin = get_builtin_by_label("dynamic")?;
+            }
+            SExpr::Defer(..) => {
+                builtin = get_builtin_by_label("defer")?;
+            }
+            SExpr::Update(..) => {
+                builtin = get_builtin_by_label("update")?;
+            }
+            SExpr::Default(..) => {
+                builtin = get_builtin_by_label("default")?;
+            }
+            SExpr::IsDefined(..) => {
+                builtin = get_builtin_by_label("is_defined")?;
+            }
+            SExpr::When(..) => {
+                builtin = get_builtin_by_label("when")?;
+            }
+            SExpr::Latch(..) => {
+                builtin = get_builtin_by_label("latch")?;
+            }
+            SExpr::Init(..) => {
+                builtin = get_builtin_by_label("init")?;
+            }
+            SExpr::SIndex(..) => {
+                builtin = get_builtin_by_label("SIndex")?;
+            }
+            SExpr::If(..) => {
+                builtin = get_builtin_by_label("If then else")?;
+            }
+            SExpr::MonitoredAt(..) => {
+                builtin = get_builtin_by_label("Monitored_at")?;
+            }
+            SExpr::Dist(..) => {
+                builtin = get_builtin_by_label("dist")?;
+            }
+            SExpr::List(..) => {
+                builtin = get_builtin_by_label("List.")?;
+            }
+            SExpr::LIndex(..) => {
+                builtin = get_builtin_by_label("get")?;
+            }
+            SExpr::LAppend(..) => {
+                builtin = get_builtin_by_label("append")?;
+            }
+            SExpr::LConcat(..) => {
+                builtin = get_builtin_by_label("concat")?;
+            }
+            SExpr::LHead(..) => {
+                builtin = get_builtin_by_label("head")?;
+            }
+            SExpr::LTail(..) => {
+                builtin = get_builtin_by_label("tail")?;
+            }
+            SExpr::LLen(..) => {
+                builtin = get_builtin_by_label("len")?;
+            }
+            SExpr::Map(..) => {
+                builtin = get_builtin_by_label("Map.")?;
+            }
+            SExpr::MGet(..) => {
+                builtin = get_builtin_by_label("get")?;
+            }
+            SExpr::MInsert(..) => {
+                builtin = get_builtin_by_label("insert")?;
+            }
+            SExpr::MRemove(..) => {
+                builtin = get_builtin_by_label("remove")?;
+            }
+            SExpr::MHasKey(..) => {
+                builtin = get_builtin_by_label("has_key")?;
+            }
+            SExpr::Sin(..) => {
+                builtin = get_builtin_by_label("sin")?;
+            }
+            SExpr::Cos(..) => {
+                builtin = get_builtin_by_label("cos")?;
+            }
+            SExpr::Tan(..) => {
+                builtin = get_builtin_by_label("tan")?;
+            }
+            SExpr::Abs(..) => {
+                builtin = get_builtin_by_label("abs")?;
+            }
+            SExpr::Not(..) => {
+                builtin = get_builtin_by_label("Not")?;
+            }
 
-        // let pos = params.text_document_position_params;
-        // let uri_key = pos.text_document.uri.to_string();
+            SExpr::Var(ref v_name) => {
+                let spec = analysis.spec.clone()?; 
+                let t = analysis.typed.clone()?.type_annotations.get(v_name);
+                
+                //check if the var is an input, output or aux variable and provide hover information accordingly
+                
+                if spec.aux_info.contains(v_name) {
+                  log::info!("Providing hover information for aux variable `{}`", v_name);
+                } else if spec.input_vars.contains(v_name) {
+                  log::info!("Providing hover information for input variable `{}`", v_name);
 
-        // let token_ref = self.token_map.get(&uri_key)?;
-        // let tokens = token_ref.value();
+                } else if spec.output_vars.contains(v_name) {
+                  log::info!("Providing hover information for output variable `{}`", v_name);
 
-        // let mut hovers = Vec::new();
-        // // contents: HoverContents::Scalar(MarkedString::String("Hovering Test".to_string())),
-        // // range: None,
-        // for token in tokens {
-        //     let hover = MarkedString::String(format!("Token: {:?} ", token.0));
-        //     hovers.push(hover);
-        // }
-        // Some(Hover {
-        //     contents: HoverContents::Array(hovers),
-        //     range: None,
-        // })
-        None
+                } else {
+                  log::info!("Variable `{}` is not an input, output or aux variable, no hover information available", v_name);
+                }
+                
+                
+                
+                return None;
+            }
+
+            _ => return None,
+        }
+        
+
+        
+        return Some(create_hover_item(
+            builtin,
+            &node_at_offset.unwrap().span,
+            &rope,
+        ));
     }
 
     // Helper function to create diagnostics from error message and range
@@ -234,5 +364,21 @@ fn create_item(item: &DsrvBuiltIn) -> CompletionItem {
         insert_text_format: Some(item.insert_text_format),
         documentation: documentation!(item.documentation),
         ..Default::default()
+    }
+}
+
+fn create_hover_item(item: &DsrvBuiltIn, span: &Span, rope: &Rope) -> Hover {
+    let content = hoverDoc!(format!(
+        "```l\n{}\n```\n{}",
+        item.detail,
+        item.documentation.trim()
+    ));
+
+    Hover {
+        contents: content,
+        range: Some(Range::new(
+            byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
+            byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
+        )),
     }
 }
