@@ -1,3 +1,14 @@
+/*
+ * Copyright (c) 2026 Emilie Bang Holmberg (github.com/EmmiPigen).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License.
+ *
+ * This project utilizes the 'trustworthiness-checker' crate, which is
+ * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
+ */
+
 use crate::{lang::pattern_matching::{extract_from_stmts}, utils::*};
 use lalrpop_util::ParseError;
 use regex::Regex;
@@ -11,10 +22,6 @@ use trustworthiness_checker::lang::dsrv::{
     span::Span,
     type_checker::{SemanticError, TypedDsrvSpecification, type_check},
 };
-
-// dynamic_lola::{
-//     ast::{, SpannedExpr}, lalr::TopDeclsParser, lalr_parser::create_lola_spec, type_checker::TypedLOLASpecification
-// };
 
 #[derive(Clone, Debug)]
 pub struct Analysis {

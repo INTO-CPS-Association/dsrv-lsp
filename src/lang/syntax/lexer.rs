@@ -1,3 +1,14 @@
+/*
+ * Copyright (c) 2026 Emilie Bang Holmberg (github.com/EmmiPigen).
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License.
+ *
+ * This project utilizes the 'trustworthiness-checker' crate, which is
+ * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
+ */
+
 use crate::utils::byte_to_pos;
 use logos::{Lexer, Logos};
 use ropey::Rope;
