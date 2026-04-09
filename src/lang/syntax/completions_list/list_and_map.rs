@@ -14,13 +14,13 @@ pub static LIST: &[DsrvBuiltIn] = &[
         label: "List.",
         kind: CompletionItemKind::CLASS,
         trigger_context: &["expr"],
-        insert_text: "List",
+        insert_text: "List.",
         insert_text_format: InsertTextFormat::PLAIN_TEXT,
         detail: "List.",
         documentation: "The List type, to be called with methods like List.get, List.append, etc.",
     },
     DsrvBuiltIn {
-        label: "get",
+        label: "List.get",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["list method"],
         insert_text: "get($1, $2)",
@@ -29,7 +29,7 @@ pub static LIST: &[DsrvBuiltIn] = &[
         documentation: "Returns the element at the specified index",
     },
     DsrvBuiltIn {
-        label: "append",
+        label: "List.append",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["list method"],
         insert_text: "append($1, $2)",
@@ -38,7 +38,7 @@ pub static LIST: &[DsrvBuiltIn] = &[
         documentation: "Ruturns a new list with the element added to the end",
     },
     DsrvBuiltIn {
-        label: "concat",
+        label: "List.concat",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["list method"],
         insert_text: "concat($1, $2)",
@@ -47,7 +47,7 @@ pub static LIST: &[DsrvBuiltIn] = &[
         documentation: "Concatenates the two list into one list",
     },
     DsrvBuiltIn {
-        label: "head",
+        label: "List.head",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["list method"],
         insert_text: "head($1)",
@@ -56,7 +56,7 @@ pub static LIST: &[DsrvBuiltIn] = &[
         documentation: "Returns the first element of the list",
     },
     DsrvBuiltIn {
-        label: "tail",
+        label: "List.tail",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["list method"],
         insert_text: "tail($1)",
@@ -65,7 +65,7 @@ pub static LIST: &[DsrvBuiltIn] = &[
         documentation: "Returns a new list containing all elements except the first",
     },
     DsrvBuiltIn {
-        label: "len",
+        label: "List.len",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["list method"],
         insert_text: "len($1)",
@@ -89,13 +89,13 @@ pub static MAP: &[DsrvBuiltIn] = &[
         label: "Map",
         kind: CompletionItemKind::CLASS,
         trigger_context: &["expr"],
-        insert_text: "Map",
+        insert_text: "Map.",
         insert_text_format: InsertTextFormat::PLAIN_TEXT,
         detail: "Map",
         documentation: "The Map type, to be called with methods like Map.get, Map.insert, etc.",
     },
     DsrvBuiltIn {
-        label: "get",
+        label: "Map.get",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["map method"],
         insert_text: "get($1, $2)",
@@ -104,7 +104,7 @@ pub static MAP: &[DsrvBuiltIn] = &[
         documentation: "Returns the value associated with the specified key",
     },
     DsrvBuiltIn {
-        label: "insert",
+        label: "Map.insert",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["map method"],
         insert_text: "insert($1, $2, $3)",
@@ -113,7 +113,7 @@ pub static MAP: &[DsrvBuiltIn] = &[
         documentation: "Inserts the value into the map with the specified key",
     },
     DsrvBuiltIn {
-        label: "remove",
+        label: "Map.remove",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["map method"],
         insert_text: "remove($1, $2)",
@@ -122,7 +122,7 @@ pub static MAP: &[DsrvBuiltIn] = &[
         documentation: "Removes the value from the map at the specified key",
     },
     DsrvBuiltIn {
-        label: "has_key",
+        label: "Map.has_key",
         kind: CompletionItemKind::METHOD,
         trigger_context: &["map method"],
         insert_text: "has_key($1, $2)",

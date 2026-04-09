@@ -164,136 +164,77 @@ impl Backend {
 
         let node_at_offset = Analysis::node_at_offset(&analysis, pos_offset);
         log::info!("Node at offset {}: {:?}", pos_offset, node_at_offset);
-        
+
         if node_at_offset.is_none() {
-            log::info!("No node found at offset {}, cannot provide hover information", pos_offset);
+            // log::info!("No node found at offset {}, cannot provide hover information", pos_offset);
             return None;
         }
-        
+
         // Match the node at the current offset with the corresponding built-in function to provide hover information. If the node is not a built-in function, return None to indicate that no hover information is available for that symbol.
         let builtin: &DsrvBuiltIn;
+        if let Some(label) = node_at_offset.unwrap().builtin_label() {
+            builtin = get_builtin_by_label(label)?;
+            return Some(create_hover_item(
+                builtin,
+                &node_at_offset.unwrap().span,
+                &rope,
+            ));
+        }
+
         match node_at_offset.unwrap().node {
-            SExpr::RestrictedDynamic(..) | SExpr::Dynamic(..) => {
-                builtin = get_builtin_by_label("dynamic")?;
-            }
-            SExpr::Defer(..) => {
-                builtin = get_builtin_by_label("defer")?;
-            }
-            SExpr::Update(..) => {
-                builtin = get_builtin_by_label("update")?;
-            }
-            SExpr::Default(..) => {
-                builtin = get_builtin_by_label("default")?;
-            }
-            SExpr::IsDefined(..) => {
-                builtin = get_builtin_by_label("is_defined")?;
-            }
-            SExpr::When(..) => {
-                builtin = get_builtin_by_label("when")?;
-            }
-            SExpr::Latch(..) => {
-                builtin = get_builtin_by_label("latch")?;
-            }
-            SExpr::Init(..) => {
-                builtin = get_builtin_by_label("init")?;
-            }
-            SExpr::SIndex(..) => {
-                builtin = get_builtin_by_label("SIndex")?;
-            }
-            SExpr::If(..) => {
-                builtin = get_builtin_by_label("If then else")?;
-            }
-            SExpr::MonitoredAt(..) => {
-                builtin = get_builtin_by_label("Monitored_at")?;
-            }
-            SExpr::Dist(..) => {
-                builtin = get_builtin_by_label("dist")?;
-            }
-            SExpr::List(..) => {
-                builtin = get_builtin_by_label("List.")?;
-            }
-            SExpr::LIndex(..) => {
-                builtin = get_builtin_by_label("get")?;
-            }
-            SExpr::LAppend(..) => {
-                builtin = get_builtin_by_label("append")?;
-            }
-            SExpr::LConcat(..) => {
-                builtin = get_builtin_by_label("concat")?;
-            }
-            SExpr::LHead(..) => {
-                builtin = get_builtin_by_label("head")?;
-            }
-            SExpr::LTail(..) => {
-                builtin = get_builtin_by_label("tail")?;
-            }
-            SExpr::LLen(..) => {
-                builtin = get_builtin_by_label("len")?;
-            }
-            SExpr::Map(..) => {
-                builtin = get_builtin_by_label("Map.")?;
-            }
-            SExpr::MGet(..) => {
-                builtin = get_builtin_by_label("get")?;
-            }
-            SExpr::MInsert(..) => {
-                builtin = get_builtin_by_label("insert")?;
-            }
-            SExpr::MRemove(..) => {
-                builtin = get_builtin_by_label("remove")?;
-            }
-            SExpr::MHasKey(..) => {
-                builtin = get_builtin_by_label("has_key")?;
-            }
-            SExpr::Sin(..) => {
-                builtin = get_builtin_by_label("sin")?;
-            }
-            SExpr::Cos(..) => {
-                builtin = get_builtin_by_label("cos")?;
-            }
-            SExpr::Tan(..) => {
-                builtin = get_builtin_by_label("tan")?;
-            }
-            SExpr::Abs(..) => {
-                builtin = get_builtin_by_label("abs")?;
-            }
-            SExpr::Not(..) => {
-                builtin = get_builtin_by_label("Not")?;
-            }
+            SExpr::Var(ref var_name) => {
+                let spec = analysis.spec.clone()?;
+                let t = spec.type_annotations.get(var_name);
 
-            SExpr::Var(ref v_name) => {
-                let spec = analysis.spec.clone()?; 
-                let t = analysis.typed.clone()?.type_annotations.get(v_name);
-                
-                //check if the var is an input, output or aux variable and provide hover information accordingly
-                
-                if spec.aux_info.contains(v_name) {
-                  log::info!("Providing hover information for aux variable `{}`", v_name);
-                } else if spec.input_vars.contains(v_name) {
-                  log::info!("Providing hover information for input variable `{}`", v_name);
+                // log::info!("Providing hover information for variable `{}`", var_name);
 
-                } else if spec.output_vars.contains(v_name) {
-                  log::info!("Providing hover information for output variable `{}`", v_name);
+                let type_str = match t {
+                    Some(ty) => format!(": {:?}", ty),
+                    None => String::new(),
+                };
 
+                let (stream_kind, stream_text) = if spec.input_vars.contains(var_name) {
+                    ("in", get_builtin_by_label("in")?.documentation)
+                  } else if spec.aux_info.contains(var_name) {
+                    ("aux", get_builtin_by_label("aux")?.documentation)
+                  } else if spec.output_vars.contains(var_name) {
+                    ("out", get_builtin_by_label("out")?.documentation)
                 } else {
-                  log::info!("Variable `{}` is not an input, output or aux variable, no hover information available", v_name);
-                }
+                    ("stream", "stream")
+                };
+
+                let info = format!("```dsrv\n{} {}{}\n```\n---\n{}", stream_kind, var_name.to_string(), type_str, stream_text);
+                // log::info!("\n{}\n", info);
+                
+                return Some(create_hover_variable(&info, &node_at_offset.unwrap().span, &rope))
                 
                 
-                
-                return None;
             }
 
             _ => return None,
         }
-        
 
-        
-        return Some(create_hover_item(
-            builtin,
-            &node_at_offset.unwrap().span,
-            &rope,
-        ));
+        //     SExpr::Var(ref v_name) => {
+        //         let spec = analysis.spec.clone()?;
+        //         let t = analysis.typed.clone()?.type_annotations.get(v_name);
+
+        //         //check if the var is an input, output or aux variable and provide hover information accordingly
+
+        //         if spec.aux_info.contains(v_name) {
+        //             // log::info!("Providing hover information for aux variable `{}`", v_name);
+        //         } else if spec.input_vars.contains(v_name) {
+        //             // log::info!("Providing hover information for input variable `{}`", v_name);
+        //         } else if spec.output_vars.contains(v_name) {
+        //             // log::info!("Providing hover information for output variable `{}`", v_name);
+        //         } else {
+        //             // log::info!("Variable `{}` is not an input, output or aux variable, no hover information available", v_name);
+        //         }
+
+        //         return None;
+        //     }
+
+        //     _ => return None,
+        // }
     }
 
     // Helper function to create diagnostics from error message and range
@@ -369,7 +310,7 @@ fn create_item(item: &DsrvBuiltIn) -> CompletionItem {
 
 fn create_hover_item(item: &DsrvBuiltIn, span: &Span, rope: &Rope) -> Hover {
     let content = hoverDoc!(format!(
-        "```l\n{}\n```\n{}",
+        "```dsrv\n{}\n```\n---\n{}",
         item.detail,
         item.documentation.trim()
     ));
@@ -380,5 +321,56 @@ fn create_hover_item(item: &DsrvBuiltIn, span: &Span, rope: &Rope) -> Hover {
             byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
             byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
         )),
+    }
+}
+
+fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
+    let content = hoverDoc!(s);
+    Hover {
+        contents: content,
+        range: Some(Range::new(
+            byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
+            byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
+        )),
+    }
+}
+
+pub trait SExprHoverExt {
+    fn builtin_label(&self) -> Option<&'static str>;
+}
+impl SExprHoverExt for SExpr {
+    fn builtin_label(&self) -> Option<&'static str> {
+        match self {
+            SExpr::RestrictedDynamic(..) | SExpr::Dynamic(..) => Some("dynamic"),
+            SExpr::Defer(..) => Some("defer"),
+            SExpr::Update(..) => Some("update"),
+            SExpr::Default(..) => Some("default"),
+            SExpr::IsDefined(..) => Some("is_defined"),
+            SExpr::When(..) => Some("when"),
+            SExpr::Latch(..) => Some("latch"),
+            SExpr::Init(..) => Some("init"),
+            SExpr::SIndex(..) => Some("SIndex"),
+            SExpr::If(..) => Some("If then else"),
+            SExpr::MonitoredAt(..) => Some("Monitored_at"),
+            SExpr::Dist(..) => Some("dist"),
+            SExpr::List(..) => Some("List."),
+            SExpr::LIndex(..) => Some("List.get"),
+            SExpr::LAppend(..) => Some("List.append"),
+            SExpr::LConcat(..) => Some("List.concat"),
+            SExpr::LHead(..) => Some("List.head"),
+            SExpr::LTail(..) => Some("List.tail"),
+            SExpr::LLen(..) => Some("List.len"),
+            SExpr::Map(..) => Some("Map."),
+            SExpr::MGet(..) => Some("Map.get"),
+            SExpr::MInsert(..) => Some("Map.insert"),
+            SExpr::MRemove(..) => Some("Map.remove"),
+            SExpr::MHasKey(..) => Some("Map.has_key"),
+            SExpr::Sin(..) => Some("sin"),
+            SExpr::Cos(..) => Some("cos"),
+            SExpr::Tan(..) => Some("tan"),
+            SExpr::Abs(..) => Some("abs"),
+            SExpr::Not(..) => Some("Not"),
+            _ => None,
+        }
     }
 }

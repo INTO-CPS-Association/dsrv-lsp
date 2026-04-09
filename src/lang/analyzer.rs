@@ -1,4 +1,4 @@
-use crate::{lang::pattern_matching::extract_nodes, utils::*};
+use crate::{lang::pattern_matching::{extract_from_stmts}, utils::*};
 use lalrpop_util::ParseError;
 use regex::Regex;
 use ropey::Rope;
@@ -29,19 +29,21 @@ impl Analysis {
     pub async fn analyze_2_point_0(text: &str) -> Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
+                log::info!("stmts: {:#?}", stmts);
+                // log::info!("stmts: {:?}", stmts[0]);
+                log::info!("lenth: {:?}", stmts.len());
                 let spec = create_dsrv_spec(&stmts);
-                log::info!("Parsed specification: {:#?}", spec);
+                // log::info!("Parsed specification: {:#?}", spec);
                 let mut nodes = Vec::new();
 
-                for (_name, expr) in &spec.exprs {
-                    extract_nodes(expr, &mut nodes);
-                }
-                // log::info!("Extracted spanned nodes: {:#?}", nodes);
+                extract_from_stmts(&stmts, &mut nodes);
+                
+                log::info!("Extracted spanned nodes: {:?}", nodes);
 
                 if !(spec.type_annotations.is_empty()) {
                     match type_check(spec.clone()) {
                         Ok(s) => {
-                            log::info!("Type checked specification: {:#?}", s);
+                            // log::info!("Type checked specification: {:?}", s);
                             return Analysis {
                                 spec: Some(spec.clone()),
                                 typed: Some(s.clone()),
@@ -50,7 +52,7 @@ impl Analysis {
                             };
                         }
                         Err(errs) => {
-                            log::error!("Type checking errors: {:#?}", errs);
+                            // log::error!("Type checking errors: {:#?}", errs);
 
                             let mut diags_vec: Vec<Diagnostic> = Vec::new();
 

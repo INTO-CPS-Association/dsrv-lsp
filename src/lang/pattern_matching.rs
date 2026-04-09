@@ -1,6 +1,9 @@
 use trustworthiness_checker::{
     SExpr,
-    lang::dsrv::{ast::SpannedExpr, span::Span},
+    lang::dsrv::{
+        ast::{STopDecl, SpannedExpr},
+        span::Span,
+    },
 };
 
 use crate::lang::analyzer::Analysis;
@@ -82,6 +85,27 @@ pub fn extract_nodes(spanned: &SpannedExpr, results: &mut Vec<SpannedExpr>) {
         SExpr::Val(_) | SExpr::Var(_) => {}
 
         _ => {}
+    }
+}
+
+pub fn extract_from_stmts(stmts: &[STopDecl], results: &mut Vec<SpannedExpr>) {
+    for stmt in stmts {
+        match stmt {
+            STopDecl::Input(var_name, _type, span) | STopDecl::Output(var_name, _type, span) | STopDecl::Aux(var_name, _type, span) => {
+                results.push(SpannedExpr {
+                    node: SExpr::Var(var_name.clone()),
+                    span: span.clone(),
+                });
+            }
+            STopDecl::Assignment(var_name, expr, span) => {
+              let var_len = var_name.to_string().len() as u32;
+              results.push(SpannedExpr {
+                node: SExpr::Var(var_name.clone()),
+                span: Span { start: span.start, end: span.start + var_len }
+              });
+              extract_nodes(expr, results);
+            }
+        }
     }
 }
 
