@@ -98,7 +98,7 @@ impl Backend {
         }
     }
 
-    // TODO: Implement the completion handler to provide autocompletion suggestions based on the current position in the document after the AST structure is updated with spanned nodes
+    // function to provide completion items based on the current position in the document and the context of the code at that position.
     pub fn get_completion(&self, params: CompletionParams) -> Option<Vec<CompletionItem>> {
         let pos = params.text_document_position;
         let uri_key = pos.text_document.uri.to_string();
@@ -151,7 +151,7 @@ impl Backend {
         return Some(items);
     }
 
-    // TODO: Implement the hover handler to provide information about the symbol under the cursor based on the current position in the document after the AST structure is updated with spanned nodes
+    // Uses the spanned nodes in the AST to provide hover information for the symbol at the current position in the document. Including variable and built-in functions.
     pub fn provide_hover(&self, params: HoverParams) -> Option<Hover> {
         let pos = params.text_document_position_params;
         let uri_key = pos.text_document.uri.to_string();

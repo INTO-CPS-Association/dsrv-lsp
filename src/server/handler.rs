@@ -9,9 +9,8 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use tower_lsp_server::{LanguageServer, ls_types::*, jsonrpc::Result};
 use crate::server::backend::Backend;
-
+use tower_lsp_server::{LanguageServer, jsonrpc::Result, ls_types::*};
 
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -44,7 +43,8 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Options(HoverOptions {
                     ..Default::default()
                 })),
-
+                
+                // TODO: Add support for definition and declaration providers in the future to enable jumping to definitions and declarations of input and output streams
                 definition_provider: Some(OneOf::Left(true)),
                 declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
                     work_done_progress_options: Default::default(),
@@ -86,19 +86,17 @@ impl LanguageServer for Backend {
     async fn did_close(&self, _params: DidCloseTextDocumentParams) {
         log::debug!("File Closed");
     }
-    
+
     //Done: Added the trigger character "." to provide suggestions for fields and methods when the user types a dot after an expression, added all the built in functions and variables to the completion list, and added the ability to provide suggestions based on the current scope and context of the code being edited.
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let completion = self.get_completion(params);
         Ok(completion.map(CompletionResponse::Array))
     }
 
-    // TODO: Implement the hover handler to provide information about the token under the cursor, such as its type and documentation, based on the AST structure with spanned nodes½
+    // Used the backend to create the hover items for the token at the position of the hover and return it to the client to be displayed in the editor.
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-      //Give token based on the position of the hover and return hover information based on the token type (input, output, aux, expr)
+        //Give token based on the position of the hover and return hover information based on the token type (input, output, aux, expr)
         let hover = self.provide_hover(params);
-      
-      
         Ok(hover)
     }
 }
