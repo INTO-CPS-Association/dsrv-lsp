@@ -42,8 +42,8 @@ macro_rules! hover_doc {
 pub struct Backend {
     pub client: Client,
     // Store the analysis, rope and lexed tokens for each document URI.
-    analysis_map: DashMap<Uri, Analysis>, 
     document_map: DashMap<Uri, Rope>, 
+    analysis_map: DashMap<Uri, Analysis>, 
     token_map: DashMap<Uri, Vec<TokenData>>, 
 }
 
