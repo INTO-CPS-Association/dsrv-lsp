@@ -41,9 +41,10 @@ macro_rules! hover_doc {
 
 pub struct Backend {
     pub client: Client,
-    analysis_map: DashMap<Uri, Analysis>, //Store the analysis results for each document URI.
-    document_map: DashMap<Uri, Rope>, //Store a Rope representation of each document with the latest changer
-    token_map: DashMap<Uri, Vec<TokenData>>, // Store the lexed tokens for each document URI
+    // Store the analysis, rope and lexed tokens for each document URI.
+    analysis_map: DashMap<Uri, Analysis>, 
+    document_map: DashMap<Uri, Rope>, 
+    token_map: DashMap<Uri, Vec<TokenData>>, 
 }
 
 // Backend implementation for the language server
