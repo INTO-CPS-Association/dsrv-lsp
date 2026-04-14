@@ -39,14 +39,15 @@ impl Analysis {
                 // log::info!("stmts: {:#?}", stmts);
                 // log::info!("stmts: {:?}", stmts[0]);
                 // log::info!("lenth: {:?}", stmts.len());
-                let spec = create_dsrv_spec(&stmts);
                 // log::info!("Parsed specification: {:#?}", spec);
-                let mut nodes = Vec::new();
-
-                extract_from_stmts(&stmts, &mut nodes);
                 
+                // Use the pattern matching function to extract all spanned nodes into a flat vector.
+                let mut nodes = Vec::new();
+                extract_from_stmts(&stmts, &mut nodes);
                 log::info!("Extracted spanned nodes: {:#?}", nodes);
-
+                
+                // Create the DSRV specification from the parsed statements for type_checker and semantic errors
+                let spec = create_dsrv_spec(&stmts);
                 if !(spec.type_annotations.is_empty()) {
                     match type_check(spec.clone()) {
                         Ok(s) => {
