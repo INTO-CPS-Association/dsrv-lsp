@@ -56,9 +56,8 @@ impl Backend {
             token_map: DashMap::new(),
         }
     }
-    pub async fn change(&self, uri: Uri, text: &String) {
+    pub async fn change(&self, uri: Uri, text: &str) {
         let rope = Rope::from_str(text);
-        let mut diags = Vec::new();
         self.document_map.insert(uri.clone(), rope);
         let tokens = tokenize(text);
         self.token_map.insert(uri.clone(), tokens);
@@ -71,9 +70,7 @@ impl Backend {
                     .await;
 
                 let analysis = Analysis::analyze_2_point_0(&text).await;
-                for diag in analysis.clone().diags {
-                    diags.push(diag);
-                }
+                let diags = analysis.diags.clone();
 
                 // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document
                 if analysis.spec.is_some() {
@@ -122,30 +119,47 @@ impl Backend {
         let mut items = Vec::new();
 
         // For the built in completion candidates to be available.
-        let builtin_items: Vec<CompletionItem> = BUILTIN_REGISTRY
-            .iter()
-            .filter(|builtin| context.iter().any(|c| builtin.trigger_context.contains(c)))
-            .map(|builtin| create_item(builtin))
-            .collect();
-        items.extend(builtin_items);
+        // let builtin_items: Vec<CompletionItem> = BUILTIN_REGISTRY
+        //     .iter()
+        //     .filter(|builtin| context.iter().any(|c| builtin.trigger_context.contains(c)))
+        //     .map(|builtin| create_item(builtin))
+        //     .collect();
+        // items.extend(builtin_items);
+        items.extend(
+            BUILTIN_REGISTRY
+                .iter()
+                .filter(|builtin| context.iter().any(|c| builtin.trigger_context.contains(c)))
+                .map(|builtin| create_item(builtin)),
+        );
 
         // Collects and add input, output, aux variables and stream expressions
         if let Some(spec) = &analysis.spec {
             let variables = get_all_declared_symbols(&spec);
-            let vars: Vec<CompletionItem> = variables
-                .iter()
-                .filter(|var| context.iter().any(|c| var.trigger_context.contains(c)))
-                .map(|var| CompletionItem {
-                    label: var.label.to_string(),
-                    kind: Some(var.kind),
-                    detail: Some(var.detail.to_string()),
-                    ..Default::default()
-                })
-                .collect();
-            items.extend(vars);
+            items.extend(
+                variables
+                    .iter()
+                    .filter(|var| context.iter().any(|c| var.trigger_context.contains(c)))
+                    .map(|var| CompletionItem {
+                        label: var.label.to_string(),
+                        kind: Some(var.kind),
+                        detail: Some(var.detail.to_string()),
+                        ..Default::default()
+                    }),
+            );
         }
+        // let vars: Vec<CompletionItem> = variables
+        //     .iter()
+        //     .filter(|var| context.iter().any(|c| var.trigger_context.contains(c)))
+        //     .map(|var| CompletionItem {
+        //         label: var.label.to_string(),
+        //         kind: Some(var.kind),
+        //         detail: Some(var.detail.to_string()),
+        //         ..Default::default()
+        //     })
+        //     .collect();
+        // items.extend(vars);
 
-        return Some(items);
+        Some(items)
     }
 
     // Uses the spanned nodes in the AST to provide hover information for the symbol at the current position in the document. Including variable and built-in functions.
@@ -159,26 +173,16 @@ impl Backend {
         let rope = self.document_map.get(&uri_key)?;
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
 
-        let node_at_offset = Analysis::node_at_offset(&analysis, pos_offset);
-        log::info!("Node at offset {}: {:?}", pos_offset, node_at_offset);
-
-        if node_at_offset.is_none() {
-            // log::info!("No node found at offset {}, cannot provide hover information", pos_offset);
-            return None;
-        }
+        let node = Analysis::node_at_offset(&analysis, pos_offset)?;
+        log::info!("Node at offset {}: {:?}", pos_offset, node);
 
         // Match the node at the current offset with the corresponding built-in function to provide hover information. If the node is not a built-in function, return None to indicate that no hover information is available for that symbol.
-        let builtin: &DsrvBuiltIn;
-        if let Some(label) = node_at_offset.unwrap().builtin_label() {
-            builtin = get_builtin_by_label(label)?;
-            return Some(create_hover_item(
-                builtin,
-                &node_at_offset.unwrap().span,
-                &rope,
-            ));
+        if let Some(label) = node.builtin_label() {
+            let builtin = get_builtin_by_label(label)?;
+            return Some(create_hover_item(builtin, &node.span, &rope));
         }
 
-        match node_at_offset.unwrap().node {
+        match node.node {
             SExpr::Var(ref var_name) => {
                 let spec = analysis.spec.clone()?;
                 let t = spec.type_annotations.get(var_name);
@@ -192,23 +196,26 @@ impl Backend {
 
                 let (stream_kind, stream_text) = if spec.input_vars.contains(var_name) {
                     ("in", get_builtin_by_label("in")?.documentation)
-                  } else if spec.aux_info.contains(var_name) {
+                } else if spec.aux_info.contains(var_name) {
                     ("aux", get_builtin_by_label("aux")?.documentation)
-                  } else if spec.output_vars.contains(var_name) {
+                } else if spec.output_vars.contains(var_name) {
                     ("out", get_builtin_by_label("out")?.documentation)
                 } else {
                     ("stream", "stream")
                 };
 
-                let info = format!("```dsrv\n{} {}{}\n```\n---\n{}", stream_kind, var_name.to_string(), type_str, stream_text);
+                let info = format!(
+                    "```dsrv\n{} {}{}\n```\n---\n{}",
+                    stream_kind,
+                    var_name.to_string(),
+                    type_str,
+                    stream_text
+                );
                 // log::info!("\n{}\n", info);
-                
-                return Some(create_hover_variable(&info, &node_at_offset.unwrap().span, &rope))
-                
-                
+                Some(create_hover_variable(&info, &node.span, &rope))
             }
 
-            _ => return None,
+            _ => None,
         }
     }
 
