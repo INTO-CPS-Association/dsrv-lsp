@@ -30,7 +30,7 @@ macro_rules! documentation {
         }))
     };
 }
-macro_rules! hoverDoc {
+macro_rules! hover_doc {
     ($value:expr) => {
         HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
@@ -41,9 +41,9 @@ macro_rules! hoverDoc {
 
 pub struct Backend {
     pub client: Client,
-    analysis_map: DashMap<Uri, Analysis>, // Store the analysis results for each document URI, with both the normal and typed specification
-    document_map: DashMap<Uri, Rope>,
-    token_map: DashMap<Uri, Vec<TokenData>>,
+    analysis_map: DashMap<Uri, Analysis>, //Store the analysis results for each document URI.
+    document_map: DashMap<Uri, Rope>, //Store a Rope representation of each document with the latest changer
+    token_map: DashMap<Uri, Vec<TokenData>>, // Store the lexed tokens for each document URI
 }
 
 // Backend implementation for the language server
@@ -74,7 +74,7 @@ impl Backend {
 
                 // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document
                 if analysis.spec.is_some() {
-                    self.analysis_map.insert(uri.clone(), analysis.clone());
+                    self.analysis_map.insert(uri.clone(), analysis);
                 }
 
                 self.client
@@ -102,7 +102,7 @@ impl Backend {
         let analysis = analysis_ref.value();
 
         // for the tokens to make the context
-        let binding = self.token_map.get(&uri_key).unwrap();
+        let binding = self.token_map.get(&uri_key)?;
         let tokens = binding.value();
 
         // For the rope to get the position offset for the context
@@ -118,13 +118,6 @@ impl Backend {
         );
         let mut items = Vec::new();
 
-        // For the built in completion candidates to be available.
-        // let builtin_items: Vec<CompletionItem> = BUILTIN_REGISTRY
-        //     .iter()
-        //     .filter(|builtin| context.iter().any(|c| builtin.trigger_context.contains(c)))
-        //     .map(|builtin| create_item(builtin))
-        //     .collect();
-        // items.extend(builtin_items);
         items.extend(
             BUILTIN_REGISTRY
                 .iter()
@@ -147,18 +140,6 @@ impl Backend {
                     }),
             );
         }
-        // let vars: Vec<CompletionItem> = variables
-        //     .iter()
-        //     .filter(|var| context.iter().any(|c| var.trigger_context.contains(c)))
-        //     .map(|var| CompletionItem {
-        //         label: var.label.to_string(),
-        //         kind: Some(var.kind),
-        //         detail: Some(var.detail.to_string()),
-        //         ..Default::default()
-        //     })
-        //     .collect();
-        // items.extend(vars);
-
         Some(items)
     }
 
@@ -206,10 +187,7 @@ impl Backend {
 
                 let info = format!(
                     "```dsrv\n{} {}{}\n```\n---\n{}",
-                    stream_kind,
-                    var_name.to_string(),
-                    type_str,
-                    stream_text
+                    stream_kind, var_name, type_str, stream_text
                 );
                 // log::info!("\n{}\n", info);
                 Some(create_hover_variable(&info, &node.span, &rope))
@@ -291,7 +269,7 @@ fn create_item(item: &DsrvBuiltIn) -> CompletionItem {
 }
 
 fn create_hover_item(item: &DsrvBuiltIn, span: &Span, rope: &Rope) -> Hover {
-    let content = hoverDoc!(format!(
+    let content = hover_doc!(format!(
         "```dsrv\n{}\n```\n---\n{}",
         item.detail,
         item.documentation.trim()
@@ -307,7 +285,7 @@ fn create_hover_item(item: &DsrvBuiltIn, span: &Span, rope: &Rope) -> Hover {
 }
 
 fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
-    let content = hoverDoc!(s);
+    let content = hover_doc!(s);
     Hover {
         contents: content,
         range: Some(Range::new(
