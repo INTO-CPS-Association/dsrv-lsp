@@ -232,15 +232,19 @@ pub struct TokenData {
 
 /// Main function to tokenize source code and collect diagnostics if there are lexer errors. Returns a vector of tokens and their corresponding spans.
 pub fn tokenize(text: &str) -> Vec<TokenData> {
+    // create the lexer and iterate through the tokens.
     let mut lexer = Token::lexer(text);
     let mut tokens = Vec::new();
 
     while let Some(token_result) = lexer.next() {
+        // Using the built in span method of the lexer to get the byte range of the token in the source code.
         let span = lexer.span();
+        // Save the actual content (text) of the token by slicing the original source code using the span of the token.
         let content = lexer.slice().to_string();
 
         match token_result {
             Ok(t) => {
+                // Ignore whitespace and comments
                 if t != Token::Whitespace && t != Token::LineComment && t != Token::BlockComment {
                     tokens.push(TokenData {
                         token: t,
@@ -250,6 +254,7 @@ pub fn tokenize(text: &str) -> Vec<TokenData> {
                 }
             }
             Err(_) => {
+                // If the token is an error, we push an error token with the content and span of the invalid token.
                 tokens.push(TokenData {
                     token: Token::Error,
                     content,

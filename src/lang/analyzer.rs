@@ -33,7 +33,7 @@ pub struct Analysis {
 
 impl Analysis {
     // Create Clone function for Analysis struct
-    pub async fn analyze_2_point_0(text: &str) -> Analysis {
+    pub async fn analyze_specification(text: &str) -> Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
                 log::info!("stmts: {:#?}", stmts);
@@ -250,7 +250,7 @@ mod test {
     #[tokio::test]
     async fn test_analyze_syntax_valid_input_not_typed() {
         let input = "in x\nin y\nout z\n\nz = x + y";
-        let analysis = Analysis::analyze_2_point_0(input).await;
+        let analysis = Analysis::analyze_specification(input).await;
 
         assert!(
             analysis.diags.is_empty(),
@@ -267,7 +267,7 @@ mod test {
     #[tokio::test]
     async fn test_analyze_syntax_valid_input_typed() {
         let input2 = "in x: Int\nin y: Int\nout z: Int\n\nz = x + y";
-        let analysis = Analysis::analyze_2_point_0(input2).await;
+        let analysis = Analysis::analyze_specification(input2).await;
 
         // println!("Analysis result: {:#?}", analysis.clone());
 
