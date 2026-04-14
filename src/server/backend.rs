@@ -42,9 +42,9 @@ macro_rules! hover_doc {
 pub struct Backend {
     pub client: Client,
     // Store the analysis, rope and lexed tokens for each document URI.
-    document_map: DashMap<Uri, Rope>, 
-    analysis_map: DashMap<Uri, Analysis>, 
-    token_map: DashMap<Uri, Vec<TokenData>>, 
+    document_map: DashMap<Uri, Rope>,
+    analysis_map: DashMap<Uri, Analysis>,
+    token_map: DashMap<Uri, Vec<TokenData>>,
 }
 
 // Backend implementation for the language server
@@ -58,17 +58,15 @@ impl Backend {
         }
     }
     pub async fn change(&self, uri: Uri, text: &str) {
-        let rope = Rope::from_str(text);
-        self.document_map.insert(uri.clone(), rope);
-        let tokens = tokenize(text);
-        self.token_map.insert(uri.clone(), tokens);
-
         match uri.to_file_path() {
-            // Try to convert URI to file path, if it fails, log an error message and skip analysis
+            // Try to convert URI to file path, if it fails, log an error message and skip analysis to avoid trying to analyse not file windows such as the output or terminal window
             Some(_path) => {
                 // If URI is successfully converted to file path, proceed with analysis
                 self.logger(format!("Analyzing document `{:?}`", uri), MessageType::INFO)
                     .await;
+
+                self.document_map.insert(uri.clone(), Rope::from_str(text));
+                self.token_map.insert(uri.clone(), tokenize(text));
 
                 let analysis = Analysis::analyze_2_point_0(&text).await;
                 let diags = analysis.diags.clone();
