@@ -41,10 +41,9 @@ macro_rules! hoverDoc {
 
 pub struct Backend {
     pub client: Client,
-    pub current_analysis: DashMap<Uri, Analysis>,
-    analysis_map: DashMap<String, Analysis>,
-    document_map: DashMap<String, Rope>,
-    token_map: DashMap<String, Vec<TokenData>>,
+    analysis_map: DashMap<Uri, Analysis>, // Store the analysis results for each document URI, with both the normal and typed specification
+    document_map: DashMap<Uri, Rope>,
+    token_map: DashMap<Uri, Vec<TokenData>>,
 }
 
 // Backend implementation for the language server
@@ -52,7 +51,6 @@ impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            current_analysis: DashMap::new(),
             document_map: DashMap::new(),
             analysis_map: DashMap::new(),
             token_map: DashMap::new(),
@@ -61,9 +59,9 @@ impl Backend {
     pub async fn change(&self, uri: Uri, text: &String) {
         let rope = Rope::from_str(text);
         let mut diags = Vec::new();
-        self.document_map.insert(uri.to_string(), rope);
+        self.document_map.insert(uri.clone(), rope);
         let tokens = tokenize(text);
-        self.token_map.insert(uri.to_string(), tokens);
+        self.token_map.insert(uri.clone(), tokens);
 
         match uri.to_file_path() {
             // Try to convert URI to file path, if it fails, log an error message and skip analysis
@@ -76,11 +74,10 @@ impl Backend {
                 for diag in analysis.clone().diags {
                     diags.push(diag);
                 }
-                self.current_analysis.insert(uri.clone(), analysis.clone());
 
                 // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document
                 if analysis.spec.is_some() {
-                    self.analysis_map.insert(uri.to_string(), analysis.clone());
+                    self.analysis_map.insert(uri.clone(), analysis.clone());
                 }
 
                 self.client
@@ -101,7 +98,7 @@ impl Backend {
     // function to provide completion items based on the current position in the document and the context of the code at that position.
     pub fn get_completion(&self, params: CompletionParams) -> Option<Vec<CompletionItem>> {
         let pos = params.text_document_position;
-        let uri_key = pos.text_document.uri.to_string();
+        let uri_key = pos.text_document.uri;
 
         // For the variables
         let analysis_ref = self.analysis_map.get(&uri_key)?;
@@ -154,7 +151,7 @@ impl Backend {
     // Uses the spanned nodes in the AST to provide hover information for the symbol at the current position in the document. Including variable and built-in functions.
     pub fn provide_hover(&self, params: HoverParams) -> Option<Hover> {
         let pos = params.text_document_position_params;
-        let uri_key = pos.text_document.uri.to_string();
+        let uri_key = pos.text_document.uri;
 
         let analysis_ref = self.analysis_map.get(&uri_key)?;
         let analysis = analysis_ref.value();
@@ -213,28 +210,6 @@ impl Backend {
 
             _ => return None,
         }
-
-        //     SExpr::Var(ref v_name) => {
-        //         let spec = analysis.spec.clone()?;
-        //         let t = analysis.typed.clone()?.type_annotations.get(v_name);
-
-        //         //check if the var is an input, output or aux variable and provide hover information accordingly
-
-        //         if spec.aux_info.contains(v_name) {
-        //             // log::info!("Providing hover information for aux variable `{}`", v_name);
-        //         } else if spec.input_vars.contains(v_name) {
-        //             // log::info!("Providing hover information for input variable `{}`", v_name);
-        //         } else if spec.output_vars.contains(v_name) {
-        //             // log::info!("Providing hover information for output variable `{}`", v_name);
-        //         } else {
-        //             // log::info!("Variable `{}` is not an input, output or aux variable, no hover information available", v_name);
-        //         }
-
-        //         return None;
-        //     }
-
-        //     _ => return None,
-        // }
     }
 
     // Helper function to create diagnostics from error message and range
