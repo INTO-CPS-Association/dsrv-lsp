@@ -36,16 +36,16 @@ impl Analysis {
     pub async fn analyze_specification(text: &str) -> Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
-                log::info!("stmts: {:#?}", stmts);
+                // log::info!("stmts: {:#?}", stmts);
                 // log::info!("stmts: {:?}", stmts[0]);
-                log::info!("lenth: {:?}", stmts.len());
+                // log::info!("lenth: {:?}", stmts.len());
                 let spec = create_dsrv_spec(&stmts);
                 // log::info!("Parsed specification: {:#?}", spec);
                 let mut nodes = Vec::new();
 
                 extract_from_stmts(&stmts, &mut nodes);
                 
-                log::info!("Extracted spanned nodes: {:?}", nodes);
+                log::info!("Extracted spanned nodes: {:#?}", nodes);
 
                 if !(spec.type_annotations.is_empty()) {
                     match type_check(spec.clone()) {
