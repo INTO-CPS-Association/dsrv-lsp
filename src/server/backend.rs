@@ -61,15 +61,15 @@ impl Backend {
         match uri.to_file_path() {
             // Try to convert URI to file path, if it fails, log an error message and skip analysis to avoid trying to analyse not file windows such as the output or terminal window
             Some(_path) => {
-                // If URI is successfully converted to file path, proceed with analysis
                 self.logger(format!("Analyzing document `{:?}`", uri), MessageType::INFO)
                     .await;
 
+                // If URI is successfully converted to file path, proceed with analysis
                 self.document_map.insert(uri.clone(), Rope::from_str(text));
                 self.token_map.insert(uri.clone(), tokenize(text));
 
                 let analysis = Analysis::analyze_2_point_0(&text).await;
-                let diags = analysis.diags.clone();
+                let diags = analysis.diags.clone(); // Clone diagnostics to avoid ownership issues when inserting analysis into the map later.
 
                 // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document
                 if analysis.spec.is_some() {
