@@ -96,25 +96,21 @@ impl Backend {
         let pos = params.text_document_position;
         let uri_key = pos.text_document.uri;
 
-        // For the variables
-        let analysis_ref = self.analysis_map.get(&uri_key)?;
-        let analysis = analysis_ref.value();
-
-        // for the tokens to make the context
-        let binding = self.token_map.get(&uri_key)?;
-        let tokens = binding.value();
-
-        // For the rope to get the position offset for the context
+        // To map the offset into byte instead of line and character
         let rope = self.document_map.get(&uri_key)?;
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
 
-        // For the context
-        let context = filter_suggestions(pos_offset as usize, tokens);
+        // for the tokens to make the context
+        let binding = self.token_map.get(&uri_key)?;
+
+        let context = filter_suggestions(pos_offset as usize, binding.value());
         log::info!(
             "Context for completion at offset {}: {:?}",
             pos_offset,
             context
         );
+
+        // Vector to collect the completion item fitting in the context
         let mut items = Vec::new();
 
         items.extend(
@@ -124,8 +120,11 @@ impl Backend {
                 .map(|builtin| create_item(builtin)),
         );
 
+        // For the variables
+        let analysis_ref = self.analysis_map.get(&uri_key)?;
+
         // Collects and add input, output, aux variables and stream expressions
-        if let Some(spec) = &analysis.spec {
+        if let Some(spec) = &analysis_ref.value().spec {
             let variables = get_all_declared_symbols(&spec);
             items.extend(
                 variables

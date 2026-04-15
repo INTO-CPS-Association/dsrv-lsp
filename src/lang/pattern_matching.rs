@@ -20,7 +20,7 @@ use trustworthiness_checker::{
 
 // Recursively extract all nodes from an expression tree and store them in a flat vector.
 pub fn extract_nodes(spanned: &SpannedExpr, results: &mut Vec<SpannedExpr>) {
-    // Visit and puch the current node onto the results vector.
+    // Visit and push the current node onto the results vector.
     results.push(spanned.clone());
 
     // Recursively extract nodes from the expression tree.
