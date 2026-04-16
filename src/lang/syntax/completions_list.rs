@@ -20,6 +20,7 @@ use once_cell::sync::Lazy;
 use tower_lsp_server::ls_types::{CompletionItemKind, InsertTextFormat};
 
 
+// Struct to hold the information about a built-in function or keyword for autocompletion
 #[derive(Debug, Clone)]
 pub struct DsrvBuiltIn {
     pub label: &'static str,
@@ -31,6 +32,7 @@ pub struct DsrvBuiltIn {
     pub documentation: &'static str,
 }
 
+// Global registry of built-in functions and keywords for autocompletion
 pub static BUILTIN_REGISTRY: Lazy<Vec<DsrvBuiltIn>> = Lazy::new(|| {
     let mut v = Vec::new();
     v.extend_from_slice(keywords_and_types::CORE);

@@ -266,12 +266,13 @@ pub fn tokenize(text: &str) -> Vec<TokenData> {
     tokens
 }
 
-pub fn find_token_at_cursor(tokens: &[TokenData], cursor_offset: usize) -> Option<&TokenData> {
-    tokens
-        .iter()
-        .filter(|t| t.span.start <= cursor_offset)
-        .last()
-}
+// Not used currently
+// pub fn find_token_at_cursor(tokens: &[TokenData], cursor_offset: usize) -> Option<&TokenData> {
+//     tokens
+//         .iter()
+//         .filter(|t| t.span.start <= cursor_offset)
+//         .last()
+// }
 
 // Helper function to get a slice of tokens around the cursor position for context-aware suggestions
 pub fn get_context_slice(tokens: &[TokenData], cursor_offset: usize, n: usize) -> Vec<&TokenData> {
@@ -293,6 +294,7 @@ pub fn get_context_slice(tokens: &[TokenData], cursor_offset: usize, n: usize) -
             _ => {}
         }
     }
+    // Take the last n tokens before the cursor (ignoring the current token if it's an identifier or literal) and return them in the original order
     let start_idx = end_idx.saturating_sub(n);
     tokens[start_idx..end_idx].iter().collect()
 }

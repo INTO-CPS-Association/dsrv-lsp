@@ -102,13 +102,12 @@ impl Backend {
 
         // for the tokens to make the context
         let binding = self.token_map.get(&uri_key)?;
-
         let context = filter_suggestions(pos_offset as usize, binding.value());
-        log::info!(
-            "Context for completion at offset {}: {:?}",
-            pos_offset,
-            context
-        );
+        // log::info!(
+        //     "Context for completion at offset {}: {:?}",
+        //     pos_offset,
+        //     context
+        // );
 
         // Vector to collect the completion item fitting in the context
         let mut items = Vec::new();
@@ -151,11 +150,12 @@ impl Backend {
 
         let rope = self.document_map.get(&uri_key)?;
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
-
+        
         let node = Analysis::node_at_offset(&analysis, pos_offset)?;
         log::info!("Node at offset {}: {:?}", pos_offset, node);
-
+        
         // Match the node at the current offset with the corresponding built-in function to provide hover information. If the node is not a built-in function, return None to indicate that no hover information is available for that symbol.
+        //TODO:This will give wrong hover info if the user is hovering over an area that has changed but was never syntactically correct, So the old AST is still present and provides hover information that does not match the current code. Could be solved by comparing with the lexed token map and use that as backup if the AST node does not match the token to still return something
         if let Some(label) = node.builtin_label() {
             let builtin = get_builtin_by_label(label)?;
             return Some(create_hover_item(builtin, &node.span, &rope));
