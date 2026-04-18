@@ -117,7 +117,7 @@ impl Analysis {
         self.spanned_nodes
             .iter()
             .filter(|spanned| offset >= spanned.span.start && offset < spanned.span.end)
-            .min_by_key(|spanned| spanned.span.end - spanned.span.start)
+            .min_by_key(|spanned| spanned.span.end - spanned.span.start) // Find the smallest node that contains the offset by finding the one with the smallest span
     }
     
     // Not used at this time but might later on
