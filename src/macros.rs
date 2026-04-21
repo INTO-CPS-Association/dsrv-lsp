@@ -9,12 +9,14 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-// Top level modules for the DynSRV Language Server Protocol (LSP) implementation.
-pub mod server;
-pub mod lang;
-pub mod utils;
-pub mod macros;
-
-
-
-
+#[macro_export]
+macro_rules! async_test {
+    (
+      $(#[$attr:meta])*
+      async fn $name:ident $($rest:tt)*
+    ) => {
+      $(#[$attr])*
+      #[test_log::test(macro_rules_attribute::apply(smol_macros::test))]
+      async fn $name $($rest)*
+    };
+}

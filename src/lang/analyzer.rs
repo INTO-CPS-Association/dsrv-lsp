@@ -9,7 +9,7 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use crate::{lang::pattern_matching::{extract_from_stmts}, utils::*};
+use crate::{lang::pattern_matching::extract_from_stmts, utils::*};
 use lalrpop_util::ParseError;
 use regex::Regex;
 use ropey::Rope;
@@ -40,12 +40,12 @@ impl Analysis {
                 // log::info!("stmts: {:?}", stmts[0]);
                 // log::info!("lenth: {:?}", stmts.len());
                 // log::info!("Parsed specification: {:#?}", spec);
-                
+
                 // Use the pattern matching function to extract all spanned nodes into a flat vector.
                 let mut nodes = Vec::new();
                 extract_from_stmts(&stmts, &mut nodes);
                 log::info!("Extracted spanned nodes: {:#?}", nodes);
-                
+
                 // Create the DSRV specification from the parsed statements for type_checker and semantic errors
                 let spec = create_dsrv_spec(&stmts);
                 if !(spec.type_annotations.is_empty()) {
@@ -246,9 +246,12 @@ fn regex_format(msg: &str) -> String {
 
 #[cfg(test)]
 mod test {
+    use crate::async_test;
+    use macro_rules_attribute::apply;
+
     use super::*;
 
-    #[tokio::test]
+    #[apply(async_test)]
     async fn test_analyze_syntax_valid_input_not_typed() {
         let input = "in x\nin y\nout z\n\nz = x + y";
         let analysis = Analysis::analyze_specification(input).await;
@@ -256,16 +259,17 @@ mod test {
         assert!(
             analysis.diags.is_empty(),
             "Expected no diagnostics for valid input, but got: {:?}",
-            analysis.diags
+            analysis
         );
 
         assert!(
             analysis.spec.is_some(),
-            "Expected spec to be Some for valid input"
+            "Expected spec to be Some for valid input, but got: {:?}",
+            analysis
         );
     }
 
-    #[tokio::test]
+    #[apply(async_test)]
     async fn test_analyze_syntax_valid_input_typed() {
         let input2 = "in x: Int\nin y: Int\nout z: Int\n\nz = x + y";
         let analysis = Analysis::analyze_specification(input2).await;
@@ -290,7 +294,4 @@ mod test {
             analysis.typed
         );
     }
-    
-    
-    
 }
