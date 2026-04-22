@@ -246,7 +246,7 @@ fn regex_format(msg: &str) -> String {
 
 #[cfg(test)]
 mod test {
-    use crate::async_test;
+    use trustworthiness_checker::async_test;
     use macro_rules_attribute::apply;
 
     use super::*;

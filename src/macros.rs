@@ -8,15 +8,3 @@
  * This project utilizes the 'trustworthiness-checker' crate, which is
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
-
-#[macro_export]
-macro_rules! async_test {
-    (
-      $(#[$attr:meta])*
-      async fn $name:ident $($rest:tt)*
-    ) => {
-      $(#[$attr])*
-      #[test_log::test(macro_rules_attribute::apply(smol_macros::test))]
-      async fn $name $($rest)*
-    };
-}
