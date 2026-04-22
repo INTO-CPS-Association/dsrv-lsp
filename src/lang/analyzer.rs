@@ -43,7 +43,7 @@ impl Analysis {
                 // Use the pattern matching function to extract all spanned nodes into a flat vector.
                 let mut nodes = Vec::new();
                 extract_from_stmts(&stmts, &mut nodes);
-                log::info!("Extracted spanned nodes: {:#?}", nodes);
+                // log::info!("Extracted spanned nodes: {:#?}", nodes);
 
                 // Create the DSRV specification from the parsed statements for type_checker and semantic errors
                 let spec = create_dsrv_spec(&stmts);
@@ -168,19 +168,18 @@ impl Analysis {
             start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
             end: byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
         };
-        
+
         log::info!("msg: {:?}", &msg);
         // let msg_formatted = regex_format(&msg);
 
         Self::create_diag(&msg, range)
     }
 }
-    
 
 #[cfg(test)]
 mod test {
-    use trustworthiness_checker::async_test;
     use macro_rules_attribute::apply;
+    use trustworthiness_checker::async_test;
 
     use super::*;
 
@@ -227,45 +226,112 @@ mod test {
             analysis.typed
         );
     }
-    
+
     #[apply(async_test)]
     async fn test_analyze_empty_input() {
-      let input = "";
-      let analysis = Analysis::analyze_specification(input).await;
-      let spec = analysis.spec.as_ref().unwrap();
-      
-      // println!("{:#?}", analysis);
-      
-      assert!(spec.input_vars.is_empty(), "Expected no input variables, but got: {:?}", spec.input_vars);
-      assert!(spec.output_vars.is_empty(), "Expected no output variables, but got: {:?}", spec.output_vars);
-      assert!(spec.aux_info.is_empty(), "Expected no auxiliary variables, but got: {:?}", spec.aux_info);
-      assert!(spec.type_annotations.is_empty(), "Expected no type annotations, but got: {:?}", spec.type_annotations);
-      
-      assert!(spec.exprs.is_empty(), "Expected no expressions, but got: {:?}", spec.exprs);  
+        let input = "";
+        let analysis = Analysis::analyze_specification(input).await;
+        let spec = analysis.spec.as_ref().unwrap();
+
+        // println!("{:#?}", analysis);
+
+        assert!(
+            spec.input_vars.is_empty(),
+            "Expected no input variables, but got: {:?}",
+            spec.input_vars
+        );
+        assert!(
+            spec.output_vars.is_empty(),
+            "Expected no output variables, but got: {:?}",
+            spec.output_vars
+        );
+        assert!(
+            spec.aux_info.is_empty(),
+            "Expected no auxiliary variables, but got: {:?}",
+            spec.aux_info
+        );
+        assert!(
+            spec.type_annotations.is_empty(),
+            "Expected no type annotations, but got: {:?}",
+            spec.type_annotations
+        );
+
+        assert!(
+            spec.exprs.is_empty(),
+            "Expected no expressions, but got: {:?}",
+            spec.exprs
+        );
     }
-    
+
     #[apply(async_test)]
     async fn test_analyze_syntax_invalid_input() {
-     let input = "in x \n out z\n z= ";
-     let analysis = Analysis::analyze_specification(input).await;
-     
-     println!("Analysis result: {:#?}", analysis);
-     
-     assert!(!analysis.diags.is_empty(), "Expected diagnostics for invalid syntax, but got none");
-     assert_eq!(analysis.diags.first().unwrap().message, "Syntax error: Unexpected EOF", "Expected diagnostic message for unexpected EOF, but got: {:?}", analysis.diags.first().unwrap().message);
-     assert!(analysis.spec.is_none(), "Expected spec to be None for invalid syntax, but got: {:?}", analysis.spec)
+        let input = "in x \n out z\n z= ";
+        let analysis = Analysis::analyze_specification(input).await;
+
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            !analysis.diags.is_empty(),
+            "Expected diagnostics for invalid syntax, but got none"
+        );
+        assert_eq!(
+            analysis.diags.first().unwrap().message,
+            "Syntax error: Unexpected EOF",
+            "Expected diagnostic message for unexpected EOF, but got: {:?}",
+            analysis.diags.first().unwrap().message
+        );
+        assert!(
+            analysis.spec.is_none(),
+            "Expected spec to be None for invalid syntax, but got: {:?}",
+            analysis.spec
+        )
     }
-    
+
     #[apply(async_test)]
     async fn test_analyze_semantic_type_error() {
-      let input = "in x: Int\nout z: Bool\nz = x";
-      let analysis = Analysis::analyze_specification(input).await;
-      
-      
-      
-    
+        let input = "in x: Int\n in y: Float\nout z: Int\nz = x + y";
+        let analysis = Analysis::analyze_specification(input).await;
+
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            !analysis.diags.is_empty(),
+            "Expected diagnostics for type error, but got none"
+        );
+        assert!(
+            analysis.diags[0].message.contains("x"),
+            "Expected diagnostic message to mention 'x', but got: {:?}",
+            analysis.diags[0].message
+        );
+        assert!(
+            analysis.diags[0].message.contains("y"),
+            "Expected diagnostic message to mention 'y', but got: {:?}",
+            analysis.diags[0].message
+        );
+        assert!(
+            analysis.typed.is_none(),
+            "Expected typed spec to be None for input with type errors, got: {:?}",
+            analysis.typed
+        );
     }
-    
-    
-    
+
+    #[apply(async_test)]
+    async fn test_analyze_semantic_undeclared_variable() {
+        let input = "in x: Int\nout z: Int\nz = x + y";
+        let analysis = Analysis::analyze_specification(input).await;
+
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            !analysis.diags.is_empty(),
+            "Expected diagnostics for undeclared variable 'y', but got none"
+        );
+
+        // assert_eq!(analysis.diags[0].message, "Usage of undeclared variable: y", "Expected diagnostic message for undeclared variable 'y', but got: {:?}", analysis.diags[0].message);
+        assert!(
+            analysis.diags[0].message.contains("y"),
+            "Expected diagnostic message to mention undeclared variable 'y', but got: {:?}",
+            analysis.diags[0].message
+        );
+    }
 }
