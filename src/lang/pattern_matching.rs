@@ -32,7 +32,7 @@ pub fn extract_nodes(spanned: &SpannedExpr, results: &mut Vec<SpannedExpr>) {
             extract_nodes(e1, results);
             extract_nodes(e2, results);
         }
-        
+
         #[rustfmt::skip] // Disable rustfmt for this match arm to maintain the grouping and readability.
         SExpr::LTail(e) | SExpr::LLen(e) | SExpr::Abs(e) | SExpr::Cos(e) | SExpr::IsDefined(e) | 
         SExpr::LHead(e) | SExpr::When(e) | SExpr::Not(e) | SExpr::Sin(e) | SExpr::Tan(e)  => {
@@ -44,14 +44,14 @@ pub fn extract_nodes(spanned: &SpannedExpr, results: &mut Vec<SpannedExpr>) {
                 extract_nodes(el, results);
             }
         }
-        
+
         SExpr::Map(kv_pair) => {
             for (_, v) in kv_pair {
                 extract_nodes(v, results);
             }
         }
 
-        SExpr::MGet(e, _) | SExpr::MRemove(e, _) | SExpr::MHasKey(e, _) | SExpr::SIndex(e, _)=> {
+        SExpr::MGet(e, _) | SExpr::MRemove(e, _) | SExpr::MHasKey(e, _) | SExpr::SIndex(e, _) => {
             extract_nodes(e, results);
         }
 
@@ -65,8 +65,7 @@ pub fn extract_nodes(spanned: &SpannedExpr, results: &mut Vec<SpannedExpr>) {
             extract_nodes(rhs, results);
         }
 
-        SExpr::Dynamic(e, _) | SExpr::RestrictedDynamic(e, _, _) | 
-        SExpr::Defer(e, _, _) => {
+        SExpr::Dynamic(e, _) | SExpr::RestrictedDynamic(e, _, _) | SExpr::Defer(e, _, _) => {
             extract_nodes(e, results);
         }
 
@@ -110,16 +109,15 @@ pub fn extract_from_stmts(stmts: &[STopDecl], results: &mut Vec<SpannedExpr>) {
     }
 }
 
-
 // Helper function to find the smallest node at a given offset in the analysis.
 impl Analysis {
     pub fn node_at_offset(&self, offset: u32) -> Option<&SpannedExpr> {
         self.spanned_nodes
             .iter()
-            .filter(|spanned| offset >= spanned.span.start && offset < spanned.span.end)
+            .filter(|spanned| offset >= spanned.span.start && offset <= spanned.span.end)
             .min_by_key(|spanned| spanned.span.end - spanned.span.start) // Find the smallest node that contains the offset by finding the one with the smallest span
     }
-    
+
     // Not used at this time but might later on
     // pub fn parent_of_node(&self, child_span: Span) -> Option<&SpannedExpr> {
     //     self.spanned_nodes
@@ -131,4 +129,201 @@ impl Analysis {
     //         })
     //         .min_by_key(|p| p.span.end - p.span.start)
     // }
+}
+
+#[cfg(test)]
+mod test {
+    use macro_rules_attribute::apply;
+    use trustworthiness_checker::async_test;
+
+    use super::*;
+
+    #[test]
+    fn test_extract_nodes_simple() {
+        let spanned = SpannedExpr {
+            node: SExpr::BinOp(
+                Box::new(SpannedExpr {
+                    node: SExpr::Val(1.into()),
+                    span: Span { start: 0, end: 1 },
+                }),
+                Box::new(SpannedExpr {
+                    node: SExpr::Val(2.into()),
+                    span: Span { start: 4, end: 5 },
+                }),
+                "+".into(),
+            ),
+            span: Span { start: 0, end: 5 },
+        };
+        let mut nodes = Vec::new();
+        extract_nodes(&spanned, &mut nodes);
+
+        // println!("Spanned: {:#?}", spanned);
+        println!("Extracted Nodes: {:#?}", nodes);
+
+        assert!(nodes.len() == 3);
+        assert!(
+            matches!(nodes[0].node, SExpr::BinOp(_, _, _)),
+            "First node should be the BinOp"
+        );
+        assert!(
+            matches!(nodes[2].node, SExpr::Val(_)),
+            "Third node should be a Val"
+        );
+    }
+
+    #[test]
+    fn test_extract_nodes_complex() {
+        let spanned = SpannedExpr {
+            node: SExpr::If(
+                Box::new(SpannedExpr {
+                    node: SExpr::Var("x".into()),
+                    span: Span { start: 0, end: 1 },
+                }),
+                Box::new(SpannedExpr {
+                    node: SExpr::Default(
+                        Box::new(SpannedExpr {
+                            node: SExpr::Val(1.into()),
+                            span: Span { start: 4, end: 5 },
+                        }),
+                        Box::new(SpannedExpr {
+                            node: SExpr::Val(2.into()),
+                            span: Span { start: 8, end: 9 },
+                        }),
+                    ),
+                    span: Span { start: 4, end: 9 },
+                }),
+                Box::new(SpannedExpr {
+                    node: SExpr::Val(3.into()),
+                    span: Span { start: 12, end: 13 },
+                }),
+            ),
+            span: Span { start: 0, end: 13 },
+        };
+        let mut nodes = Vec::new();
+        extract_nodes(&spanned, &mut nodes);
+
+        println!("Extracted Nodes: {:#?}", nodes);
+        assert!(nodes.len() == 6, "Expected 6 node, got {}", nodes.len());
+        assert!(
+            matches!(nodes[0].node, SExpr::If(_, _, _)),
+            "First node should be the If"
+        );
+        assert!(
+            matches!(nodes[2].node, SExpr::Default(_, _)),
+            "Third node should be the Default"
+        );
+        assert!(
+            matches!(nodes[5].node, SExpr::Val(_)),
+            "Sixth node should be a Val"
+        );
+    }
+
+    #[test]
+    fn test_extract_from_stmts() {
+        let stmts = vec![
+            STopDecl::Input("x".into(), None, Span { start: 0, end: 4 }),
+            STopDecl::Input("y".into(), None, Span { start: 5, end: 9 }),
+            STopDecl::Output("z".into(), None, Span { start: 10, end: 15 }),
+            STopDecl::Assignment(
+                "z".into(),
+                SpannedExpr {
+                    node: SExpr::BinOp(
+                        Box::new(SpannedExpr {
+                            node: SExpr::Var("x".into()),
+                            span: Span { start: 21, end: 22 },
+                        }),
+                        Box::new(SpannedExpr {
+                            node: SExpr::Var("y".into()),
+                            span: Span { start: 25, end: 26 },
+                        }),
+                        "+".into(),
+                    ),
+                    span: Span { start: 21, end: 26 },
+                },
+                Span { start: 17, end: 26 },
+            ),
+        ];
+
+        // println!("Statements: {:#?}", stmts);
+
+        let mut results = Vec::new();
+        extract_from_stmts(&stmts, &mut results);
+
+        println!("Extracted from statements: {:#?}", results);
+
+        assert!(
+            results.len() == 7,
+            "Expected 6 nodes, got {}",
+            results.len()
+        );
+        assert!(
+            matches!(results[0].node, SExpr::Var(ref name) if name.to_string() == "x"),
+            "First node should be variable 'x'"
+        );
+        assert!(
+            matches!(results[1].node, SExpr::Var(ref name) if name.to_string() == "y"),
+            "Second node should be variable 'y'"
+        );
+        assert!(
+            matches!(results[2].node, SExpr::Var(ref name) if name.to_string() == "z"),
+            "Third node should be variable 'z'"
+        );
+
+        // Test if the span of the variable 'z' in the assignment is cut of correctly to only include the variable name and not the whole expression
+        assert_eq!(
+            results[3].span.end, 18,
+            "Expected span end to be 18 for variable 'z' in assignment"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_node_at_offset() {
+        let spanned_nodes = vec![
+            SpannedExpr {
+                node: SExpr::Var("x".into()),
+                span: Span { start: 0, end: 4 },
+            },
+            SpannedExpr {
+                node: SExpr::Var("y".into()),
+                span: Span { start: 5, end: 9 },
+            },
+            SpannedExpr {
+                node: SExpr::Var("z".into()),
+                span: Span { start: 10, end: 15 },
+            },
+        ];
+
+        let analysis = Analysis {
+            spec: None,
+            typed: None,
+            diags: vec![],
+            spanned_nodes,
+        };
+
+        // Test offsets that should return a node
+        let node = analysis.node_at_offset(2).unwrap();
+        assert!(
+            matches!(node.node, SExpr::Var(ref name) if name.to_string() == "x"),
+            "Offset 2 should return variable 'x'"
+        );
+
+        let node = analysis.node_at_offset(7).unwrap();
+        assert!(
+            matches!(node.node, SExpr::Var(ref name) if name.to_string() == "y"),
+            "Offset 7 should return variable 'y'"
+        );
+
+        let node = analysis.node_at_offset(18);
+        assert!(
+            node.is_none(),
+            "Offset 18 should return None as it is outside all spans"
+        );
+
+        // Test offsets that are on the boundary of spans
+        let node = analysis.node_at_offset(4).unwrap();
+        assert!(
+            matches!(node.node, SExpr::Var(ref name) if name.to_string() == "x"),
+            "Offset 4 should return variable 'x'"
+        );
+    }
 }

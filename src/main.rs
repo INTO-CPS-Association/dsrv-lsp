@@ -28,3 +28,15 @@ async fn main() {
   let (service, socket) = LspService::build(|client| {Backend::new(client)}).finish();
   Server::new(stdin, stdout, socket).serve(service).await;
 }
+
+
+// #[cfg(test)]
+// mod test {
+//   use macro_rules_attribute::apply;
+//   use trustworthiness_checker::async_test;
+  
+//   use super::*;
+  
+  
+  
+// }

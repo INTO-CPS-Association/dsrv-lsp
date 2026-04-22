@@ -35,7 +35,7 @@ impl Analysis {
     pub async fn analyze_specification(text: &str) -> Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
-                // log::info!("stmts: {:#?}", stmts);
+                log::info!("stmts: {:#?}", stmts);
                 // log::info!("stmts: {:?}", stmts[0]);
                 // log::info!("lenth: {:?}", stmts.len());
                 // log::info!("Parsed specification: {:#?}", spec);
