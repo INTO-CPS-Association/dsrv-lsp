@@ -147,7 +147,7 @@ impl Backend {
 
         let analysis_ref = self.analysis_map.get(&uri_key)?;
         let analysis = analysis_ref.value();
-
+        
         let rope = self.document_map.get(&uri_key)?;
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
         

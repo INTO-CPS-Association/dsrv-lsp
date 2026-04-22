@@ -11,7 +11,6 @@
 
 use crate::{lang::pattern_matching::extract_from_stmts, utils::*};
 use lalrpop_util::ParseError;
-use regex::Regex;
 use ropey::Rope;
 // use tower_lsp::lsp_types::*;
 use tower_lsp_server::ls_types::*;
@@ -169,80 +168,14 @@ impl Analysis {
             start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
             end: byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
         };
+        
+        log::info!("msg: {:?}", &msg);
+        // let msg_formatted = regex_format(&msg);
 
-        let msg_formatted = regex_format(&msg);
-
-        Self::create_diag(&msg_formatted, range)
+        Self::create_diag(&msg, range)
     }
 }
-
-fn regex_format(msg: &str) -> String {
-    let re = Regex::new(r#"(\w+)\(Var\(VarName::new\("(\w+)"\)\)\)"#).unwrap();
-
-    let result = re
-        .replace_all(&msg, |caps: &regex::Captures| {
-            let var_type = match &caps[1] {
-                "Int" => "integer",
-                "Float" => "float",
-                "Str" => "string",
-                "Bool" => "boolean",
-                "Unit" => "Unit",
-                _ => "unknown",
-            };
-            format!("{} `{}`", var_type, &caps[2])
-        })
-        .to_string();
-
-    let re2 = Regex::new(r#"(\w+)\(Val\(Known\("*?(\w+)"*?\)\)\)"#).unwrap();
-    let result = re2.replace_all(&result, |caps: &regex::Captures| {
-        let var_type = match &caps[1] {
-            "Int" => "integer",
-            "Float" => "float",
-            "Str" => "string",
-            "Bool" => "boolean",
-            "Unit" => "Unit",
-            _ => "unknown",
-        };
-        format!("{} `{}`", var_type, &caps[2])
-    });
-
-    let re3 = Regex::new(r#"binary function (?P<kind>[SNB])Op\((\w+)\)"#).unwrap();
-
-    let result = re3.replace_all(&result, |caps: &regex::Captures| {
-        let op_type = match &caps["kind"] {
-            "S" => "String",
-            "N" => "Numerical",
-            "B" => "Boolean",
-            _ => "unknown",
-        };
-        format!("`{} {}`", op_type, &caps[2])
-    });
-
-    result.into_owned().trim().to_string()
-}
-
-// "Numerical operation not valid on integers".into(),
-// "Numerical operation not valid on floats".into(),
-// "Cannot apply binary function {:?} to expressions of type {:?} and {:?}",
-// "Cannot create default-expression with two different types: {:?} and {:?}",
-// "Cannot create if-expression with two different types: {:?} and {:?}",
-// "If expression condition must be a boolean".into(),
-// "Mismatched type in Stream Index expression, expression and default does not match: {:?}",
-// "Type mismatch: expected {:?}, got {:?}",
-// "Type ascription required for dynamic"
-// "Expected Dynamic to be applied to a Str, got {:?}",
-// "Expected RestrictedDynamic to be applied to a Str, got {:?}",
-// "Type ascription required for restricted dynamic"
-// "Type ascription required for defer"
-// "Expected Defer to be applied to a Str, got {:?}",
-// "Not can only be applied to boolean expressions".into(),
-// "Init requires both arguments to have the same type, got {:?} and {:?}",
-// "Sin can only be applied to float expressions, got {:?}",
-// "Cos can only be applied to float expressions, got {:?}",
-// "Tan can only be applied to float expressions, got {:?}",
-// "Abs can only be applied to numeric expressions, got {:?}",
-// "Usage of undeclared variable: {:?}",
-//"Stream expression {:?} not assigned a type before semantic analysis",
+    
 
 #[cfg(test)]
 mod test {
