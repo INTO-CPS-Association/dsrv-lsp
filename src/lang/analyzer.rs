@@ -334,4 +334,66 @@ mod test {
             analysis.diags[0].message
         );
     }
+
+    #[apply(async_test)]
+    async fn test_create_diags_function() {
+        let range = Range::new(Position::new(1, 1), Position::new(1, 5));
+        let diag = Analysis::create_diag("Test error message", range.clone());
+
+        println!("Diagnostic: {:#?}", diag);
+
+        assert_eq!(
+            diag.message, "Test error message",
+            "Expected diagnostic message to match input, but got: {:?}",
+            diag.message
+        );
+        assert_eq!(
+            diag.range.start, range.start,
+            "Expected diagnostic range start to match input, but got: {:?}",
+            diag.range.start
+        );
+        assert_eq!(
+            diag.range.end, range.end,
+            "Expected diagnostic range end to match input, but got: {:?}",
+            diag.range.end
+        );
+
+        assert_eq!(
+            diag.severity,
+            Some(DiagnosticSeverity::ERROR),
+            "Expected diagnostic severity to be ERROR, but got: {:?}",
+            diag.severity
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_create_semancic_diags_function() {
+        let range = Range::new(Position::new(1, 1), Position::new(1, 5));
+        let diag = Analysis::create_diag("Test error semantic message", range.clone());
+
+        println!("Diagnostic: {:#?}", diag);
+
+        assert_eq!(
+            diag.message, "Test error semantic message",
+            "Expected diagnostic message to match input, but got: {:?}",
+            diag.message
+        );
+        assert_eq!(
+            diag.range.start, range.start,
+            "Expected diagnostic range start to match input, but got: {:?}",
+            diag.range.start
+        );
+        assert_eq!(
+            diag.range.end, range.end,
+            "Expected diagnostic range end to match input, but got: {:?}",
+            diag.range.end
+        );
+
+        assert_eq!(
+            diag.severity,
+            Some(DiagnosticSeverity::ERROR),
+            "Expected diagnostic severity to be ERROR, but got: {:?}",
+            diag.severity
+        );
+    }
 }
