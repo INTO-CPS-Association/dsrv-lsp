@@ -204,8 +204,8 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_syntax_valid_input_typed() {
-        let input2 = "in x: Int\nin y: Int\nout z: Int\n\nz = x + y";
-        let analysis = Analysis::analyze_specification(input2).await;
+        let input = "in x: Int\nin y: Int\nout z: Int\n\nz = x + y";
+        let analysis = Analysis::analyze_specification(input).await;
 
         // println!("Analysis result: {:#?}", analysis.clone());
 
@@ -227,4 +227,45 @@ mod test {
             analysis.typed
         );
     }
+    
+    #[apply(async_test)]
+    async fn test_analyze_empty_input() {
+      let input = "";
+      let analysis = Analysis::analyze_specification(input).await;
+      let spec = analysis.spec.as_ref().unwrap();
+      
+      // println!("{:#?}", analysis);
+      
+      assert!(spec.input_vars.is_empty(), "Expected no input variables, but got: {:?}", spec.input_vars);
+      assert!(spec.output_vars.is_empty(), "Expected no output variables, but got: {:?}", spec.output_vars);
+      assert!(spec.aux_info.is_empty(), "Expected no auxiliary variables, but got: {:?}", spec.aux_info);
+      assert!(spec.type_annotations.is_empty(), "Expected no type annotations, but got: {:?}", spec.type_annotations);
+      
+      assert!(spec.exprs.is_empty(), "Expected no expressions, but got: {:?}", spec.exprs);  
+    }
+    
+    #[apply(async_test)]
+    async fn test_analyze_syntax_invalid_input() {
+     let input = "in x \n out z\n z= ";
+     let analysis = Analysis::analyze_specification(input).await;
+     
+     println!("Analysis result: {:#?}", analysis);
+     
+     assert!(!analysis.diags.is_empty(), "Expected diagnostics for invalid syntax, but got none");
+     assert_eq!(analysis.diags.first().unwrap().message, "Syntax error: Unexpected EOF", "Expected diagnostic message for unexpected EOF, but got: {:?}", analysis.diags.first().unwrap().message);
+     assert!(analysis.spec.is_none(), "Expected spec to be None for invalid syntax, but got: {:?}", analysis.spec)
+    }
+    
+    #[apply(async_test)]
+    async fn test_analyze_semantic_type_error() {
+      let input = "in x: Int\nout z: Bool\nz = x";
+      let analysis = Analysis::analyze_specification(input).await;
+      
+      
+      
+    
+    }
+    
+    
+    
 }
