@@ -180,13 +180,13 @@ impl Analysis {
 mod test {
     use macro_rules_attribute::apply;
     use trustworthiness_checker::async_test;
-
+    use crate::test_utils;
     use super::*;
 
     #[apply(async_test)]
     async fn test_analyze_syntax_valid_input_not_typed() {
-        let input = "in x\nin y\nout z\n\nz = x + y";
-        let analysis = Analysis::analyze_specification(input).await;
+        let input = test_utils::input_valid_simple();
+        let analysis = test_utils::analyze_spec(input).await;
 
         assert!(
             analysis.diags.is_empty(),
@@ -203,8 +203,8 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_syntax_valid_input_typed() {
-        let input = "in x: Int\nin y: Int\nout z: Int\n\nz = x + y";
-        let analysis = Analysis::analyze_specification(input).await;
+        let input = test_utils::input_valid_typed();
+        let analysis = test_utils::analyze_spec(input).await;
 
         // println!("Analysis result: {:#?}", analysis.clone());
 
@@ -229,8 +229,8 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_empty_input() {
-        let input = "";
-        let analysis = Analysis::analyze_specification(input).await;
+        let input = test_utils::input_empty();
+        let analysis = test_utils::analyze_spec(input).await;
         let spec = analysis.spec.as_ref().unwrap();
 
         // println!("{:#?}", analysis);
@@ -265,8 +265,8 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_syntax_invalid_input() {
-        let input = "in x \n out z\n z= ";
-        let analysis = Analysis::analyze_specification(input).await;
+        let input = test_utils::input_invalid_simple();
+        let analysis =test_utils::analyze_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
 
@@ -289,11 +289,10 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_semantic_type_error() {
-        let input = "in x: Int\n in y: Float\nout z: Int\nz = x + y";
-        let analysis = Analysis::analyze_specification(input).await;
+        let input = test_utils::input_invalid_typed();
+        let analysis = test_utils::analyze_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
-
         assert!(
             !analysis.diags.is_empty(),
             "Expected diagnostics for type error, but got none"
@@ -317,8 +316,8 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_semantic_undeclared_variable() {
-        let input = "in x: Int\nout z: Int\nz = x + y";
-        let analysis = Analysis::analyze_specification(input).await;
+        let input = test_utils::input_semantic_undeclared_var();
+        let analysis = test_utils::analyze_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
 

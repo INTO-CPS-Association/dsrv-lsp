@@ -9,11 +9,11 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use crate::utils::byte_to_pos;
+// use crate::utils::byte_to_pos;
 use logos::{Lexer, Logos};
-use ropey::Rope;
+// use ropey::Rope;
 // use tower_lsp::lsp_types::{Diagnostic, Range};
-use tower_lsp_server::ls_types::{Diagnostic, Range};
+// use tower_lsp_server::ls_types::{Diagnostic, Range};
 
 // Custom function to handle block comments, allowing for nested block comments
 fn lex_block_comment(lex: &mut Lexer<Token>) -> Result<(), LexerError> {
@@ -56,22 +56,22 @@ pub enum LexerError {
 }
 
 // Implement a method to convert LexerError into a vector of Diagnostics with a given Span
-impl LexerError {
-    pub fn into_diags(self, span: std::ops::Range<usize>, source: &str) -> Diagnostic {
-        let rope = Rope::from_str(source);
-        let msg = match self {
-            LexerError::Invalid => "Invalid token".to_string(),
-            LexerError::UnclosedComment => "Unclosed block comment".to_string(),
-        };
-        Diagnostic::new_simple(
-            Range::new(
-                byte_to_pos(&rope, span.start).unwrap(),
-                byte_to_pos(&rope, span.end).unwrap(),
-            ),
-            msg,
-        )
-    }
-}
+// impl LexerError {
+//     pub fn into_diags(self, span: std::ops::Range<usize>, source: &str) -> Diagnostic {
+//         let rope = Rope::from_str(source);
+//         let msg = match self {
+//             LexerError::Invalid => "Invalid token".to_string(),
+//             LexerError::UnclosedComment => "Unclosed block comment".to_string(),
+//         };
+//         Diagnostic::new_simple(
+//             Range::new(
+//                 byte_to_pos(&rope, span.start).unwrap(),
+//                 byte_to_pos(&rope, span.end).unwrap(),
+//             ),
+//             msg,
+//         )
+//     }
+// }
 
 #[derive(Logos, Debug, Clone, PartialEq, Copy, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
@@ -223,7 +223,7 @@ pub enum Token {
     Error,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TokenData {
     pub token: Token,
     pub content: String,
@@ -275,7 +275,7 @@ pub fn tokenize(text: &str) -> Vec<TokenData> {
 // }
 
 // Helper function to get a slice of tokens around the cursor position for context-aware suggestions
-pub fn get_context_slice(tokens: &[TokenData], cursor_offset: usize, n: usize) -> Vec<&TokenData> {
+pub fn get_context_slice(tokens: &[TokenData], cursor_offset: usize, n: usize) -> Vec<TokenData> {
     // We look for tokens that end before or exactly at the cursor, take the last n tokens, and reverse them to maintain the original order
 
     let pos = tokens
@@ -296,7 +296,7 @@ pub fn get_context_slice(tokens: &[TokenData], cursor_offset: usize, n: usize) -
     }
     // Take the last n tokens before the cursor (ignoring the current token if it's an identifier or literal) and return them in the original order
     let start_idx = end_idx.saturating_sub(n);
-    tokens[start_idx..end_idx].iter().collect()
+    tokens[start_idx..end_idx].to_vec()
 }
 
 pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'static str> {
@@ -304,7 +304,7 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'s
     log::info!("Tokens at cursor: {:?}", context_tokens);
 
     let last_token = match context_tokens.last() {
-        Some(&t) => t,
+        Some(t) => t,
         None => {
             return vec!["toplevel"];
         }
@@ -335,5 +335,113 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'s
         Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang | Token::Concat | Token::If | Token::Then | Token::Else => vec!["expr"],
 
         _ => vec!["toplevel", "expr"],
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test_utils;
+    use macro_rules_attribute::apply;
+    use trustworthiness_checker::async_test;
+
+    #[test]
+    fn test_tokenize_simple_input() {
+        let input = test_utils::input_valid_simple();
+        let tokens = test_utils::tokenize_input(input);
+
+        println!("Tokens: {:#?}", tokens);
+
+        assert!(
+            tokens.len() == 11,
+            "Expected 11 tokens, got {}",
+            tokens.len()
+        );
+
+        assert!(
+            matches!(tokens[3].token, Token::Identifier),
+            "Expected Identifier token, got {:?}",
+            tokens[3].token
+        );
+
+        assert!(
+            tokens[7].content == "=",
+            "Expected '=' token, got {:?}",
+            tokens[7].content
+        )
+    }
+
+    #[test]
+    fn test_tokenize_typed_input() {
+        let input = test_utils::input_valid_typed();
+        let tokens = test_utils::tokenize_input(input);
+
+        println!("Tokens: {:#?}", tokens);
+
+        assert!(
+            matches!(tokens[2].token, Token::Colon),
+            "Expected Colon token, got {:?}",
+            tokens[2].token
+        );
+        assert!(
+            matches!(tokens[7].token, Token::Int),
+            "Expected Int token, got {:?}",
+            tokens[7].token
+        );
+    }
+
+    #[test]
+    fn test_tokenize_invalid_input() {
+        let input = test_utils::input_invalid_simple();
+        let tokens = test_utils::tokenize_input(input);
+
+        println!("Tokens: {:#?}", tokens);
+
+        assert!(!tokens.is_empty(), "Expected tokens, got none");
+
+        assert!(
+            matches!(tokens.last().unwrap().token, Token::Eq),
+            "Expected Eq token, got {:?}",
+            tokens.last().unwrap().token
+        );
+    }
+
+    #[test]
+    fn test_tokenize_empty_input() {
+        let input = test_utils::input_empty();
+        let tokens = test_utils::tokenize_input(input);
+
+        println!("Tokens: {:#?}", tokens);
+
+        assert!(tokens.is_empty(), "Expected no tokens, got {:?}", tokens);
+    }
+
+    #[test]
+    fn test_get_context_slide() {
+      let input = test_utils::input_invalid_simple();
+      let tokens = test_utils::tokenize_input(input);
+      
+      let context_slide = get_context_slice(&tokens, 15, 2);
+      
+      let result = vec![
+        TokenData {
+          token: Token::Identifier,
+          content: "z".to_string(),
+          span: 11..12,
+        },
+        TokenData {
+          token: Token::Eq,
+          content: "=".to_string(),
+          span: 13..14,
+        }
+      ];
+      
+      println!("Context slide: {:#?}", context_slide);
+      
+      assert!(context_slide.len() == 2, "Expected 2 tokens in context slide, got {}", context_slide.len());
+
+      assert_eq!(context_slide, result, "Expected context slide to be {:?}, got {:?}", result, context_slide);
+      
+      
     }
 }
