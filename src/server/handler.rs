@@ -45,13 +45,13 @@ impl LanguageServer for Backend {
                 })),
                 
                 // TODO: Add support for definition and declaration providers in the future to enable jumping to definitions and declarations of input and output streams
-                definition_provider: Some(OneOf::Left(true)),
-                declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
-                    work_done_progress_options: Default::default(),
-                })),
-                execute_command_provider: Some(ExecuteCommandOptions {
-                    ..Default::default()
-                }),
+                // definition_provider: Some(OneOf::Left(true)),
+                // declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
+                //     work_done_progress_options: Default::default(),
+                // })),
+                // execute_command_provider: Some(ExecuteCommandOptions {
+                //     ..Default::default()
+                // }),
 
                 ..ServerCapabilities::default()
             },
