@@ -14,7 +14,7 @@ pub mod server;
 pub mod lang;
 pub mod utils;
 pub mod macros;
-pub mod test_utils;
+pub mod fixtures;
 
 
 

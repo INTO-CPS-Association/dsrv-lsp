@@ -341,14 +341,14 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'s
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_utils;
+    use crate::fixtures;
     use macro_rules_attribute::apply;
     use trustworthiness_checker::async_test;
 
     #[test]
     fn test_tokenize_simple_input() {
-        let input = test_utils::input_valid_simple();
-        let tokens = test_utils::tokenize_input(input);
+        let input = fixtures::input_valid_simple();
+        let tokens = fixtures::tokenize_input(input);
 
         println!("Tokens: {:#?}", tokens);
 
@@ -373,8 +373,8 @@ mod test {
 
     #[test]
     fn test_tokenize_typed_input() {
-        let input = test_utils::input_valid_typed();
-        let tokens = test_utils::tokenize_input(input);
+        let input = fixtures::input_valid_typed();
+        let tokens = fixtures::tokenize_input(input);
 
         println!("Tokens: {:#?}", tokens);
 
@@ -392,8 +392,8 @@ mod test {
 
     #[test]
     fn test_tokenize_invalid_input() {
-        let input = test_utils::input_invalid_simple();
-        let tokens = test_utils::tokenize_input(input);
+        let input = fixtures::input_invalid_simple();
+        let tokens = fixtures::tokenize_input(input);
 
         println!("Tokens: {:#?}", tokens);
 
@@ -408,8 +408,8 @@ mod test {
 
     #[test]
     fn test_tokenize_empty_input() {
-        let input = test_utils::input_empty();
-        let tokens = test_utils::tokenize_input(input);
+        let input = fixtures::input_empty();
+        let tokens = fixtures::tokenize_input(input);
 
         println!("Tokens: {:#?}", tokens);
 
@@ -418,30 +418,55 @@ mod test {
 
     #[test]
     fn test_get_context_slide() {
-      let input = test_utils::input_invalid_simple();
-      let tokens = test_utils::tokenize_input(input);
-      
-      let context_slide = get_context_slice(&tokens, 15, 2);
-      
-      let result = vec![
-        TokenData {
-          token: Token::Identifier,
-          content: "z".to_string(),
-          span: 11..12,
-        },
-        TokenData {
-          token: Token::Eq,
-          content: "=".to_string(),
-          span: 13..14,
-        }
-      ];
-      
-      println!("Context slide: {:#?}", context_slide);
-      
-      assert!(context_slide.len() == 2, "Expected 2 tokens in context slide, got {}", context_slide.len());
+        let input = fixtures::input_invalid_simple();
+        let tokens = fixtures::tokenize_input(input);
 
-      assert_eq!(context_slide, result, "Expected context slide to be {:?}, got {:?}", result, context_slide);
+        let context_slide = get_context_slice(&tokens, 15, 2);
+
+        let result = vec![
+            TokenData {
+                token: Token::Identifier,
+                content: "z".to_string(),
+                span: 11..12,
+            },
+            TokenData {
+                token: Token::Eq,
+                content: "=".to_string(),
+                span: 13..14,
+            },
+        ];
+
+        println!("Context slide: {:#?}", context_slide);
+
+        assert!(
+            context_slide.len() == 2,
+            "Expected 2 tokens in context slide, got {}",
+            context_slide.len()
+        );
+        assert_eq!(
+            context_slide, result,
+            "Expected context slide to be {:?}, got {:?}",
+            result, context_slide
+        );
+    }
+    
+    #[test]
+    fn test_filter_suggestions_simple() {
+      let input = fixtures::input_invalid_simple();
+      let tokens = fixtures::tokenize_input(input);
       
+      let filter = filter_suggestions(15, &tokens);
       
+      println!("Filter: {:#?}", filter);
+      
+      assert!(!filter.is_empty(), "Expected suggestions, got none");
+      
+      assert_eq!(filter, vec!["expr"], "Expected [\"expr\"], but got {:?}", filter);
+    }
+    
+    #[test]
+    fn test_filter_suggestions_complex() {
+      
+    
     }
 }
