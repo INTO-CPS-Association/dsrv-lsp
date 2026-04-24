@@ -279,8 +279,6 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'s
 mod test {
     use super::*;
     use crate::fixtures;
-    use macro_rules_attribute::apply;
-    use trustworthiness_checker::async_test;
 
     #[test]
     fn test_tokenize_simple_input() {
