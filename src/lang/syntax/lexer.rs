@@ -10,73 +10,14 @@
  */
 
 // use crate::utils::byte_to_pos;
-use logos::{Lexer, Logos};
+use logos::Logos;
 // use ropey::Rope;
 // use tower_lsp::lsp_types::{Diagnostic, Range};
 // use tower_lsp_server::ls_types::{Diagnostic, Range};
 
-// Custom function to handle block comments, allowing for nested block comments
-// Removed as the parser does not support nested block comments
-// fn lex_block_comment(lex: &mut Lexer<Token>) -> Result<(), LexerError> {
-//     let remainder = lex.remainder();
-//     let mut depth = 1;
-//     let mut chars = remainder.char_indices().peekable();
-//     while let Some((i, c)) = chars.next() {
-//         match c {
-//             '*' => {
-//                 // Check for closing of block comment
-//                 if chars.peek().map(|(_, c)| *c) == Some(')') {
-//                     chars.next(); // Consume the ')'
-//                     depth -= 1; // Decrease depth for block comment nesting
-//                     if depth == 0 {
-//                         // If depth is zero, we have closed all nested block comments
-//                         lex.bump(i + "*)".len()); // Advance the lexer past the closing '*)'
-//                         return Ok(());
-//                     }
-//                 }
-//             }
-//             '(' => {
-//                 // Check for nesting of block comment
-//                 if chars.peek().map(|(_, c)| *c) == Some('*') {
-//                     chars.next(); // Consume the '*'
-//                     depth += 1; // Increase depth for block comment nesting
-//                 }
-//             }
-//             _ => {} // Ignore other characters
-//         }
-//     }
-//     lex.bump(remainder.len());
-//     Err(LexerError::UnclosedComment)
-// }
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum LexerError {
-    #[default]
-    Invalid,
-    UnclosedComment,
-}
-
-// Implement a method to convert LexerError into a vector of Diagnostics with a given Span
-// impl LexerError {
-//     pub fn into_diags(self, span: std::ops::Range<usize>, source: &str) -> Diagnostic {
-//         let rope = Rope::from_str(source);
-//         let msg = match self {
-//             LexerError::Invalid => "Invalid token".to_string(),
-//             LexerError::UnclosedComment => "Unclosed block comment".to_string(),
-//         };
-//         Diagnostic::new_simple(
-//             Range::new(
-//                 byte_to_pos(&rope, span.start).unwrap(),
-//                 byte_to_pos(&rope, span.end).unwrap(),
-//             ),
-//             msg,
-//         )
-//     }
-// }
 
 #[derive(Logos, Debug, Clone, PartialEq, Copy, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
-#[logos(error=LexerError)]
 pub enum Token {
     #[regex(r"//[^\n\r]*", allow_greedy = true)]
     LineComment,
@@ -246,7 +187,9 @@ pub fn tokenize(text: &str) -> Vec<TokenData> {
         match token_result {
             Ok(t) => {
                 // Ignore whitespace and comments
-                if t != Token::Whitespace && t != Token::LineComment /* && t != Token::BlockComment  */{
+                if t != Token::Whitespace && t != Token::LineComment
+                /* && t != Token::BlockComment  */
+                {
                     tokens.push(TokenData {
                         token: t,
                         content,
@@ -267,13 +210,6 @@ pub fn tokenize(text: &str) -> Vec<TokenData> {
     tokens
 }
 
-// Not used currently
-// pub fn find_token_at_cursor(tokens: &[TokenData], cursor_offset: usize) -> Option<&TokenData> {
-//     tokens
-//         .iter()
-//         .filter(|t| t.span.start <= cursor_offset)
-//         .last()
-// }
 
 // Helper function to get a slice of tokens around the cursor position for context-aware suggestions
 pub fn get_context_slice(tokens: &[TokenData], cursor_offset: usize, n: usize) -> Vec<TokenData> {
@@ -480,9 +416,17 @@ mod test {
                 span: 249..250,
             },
         ];
-        
-        assert!(context_slide.len() == 3, "Expected 3 tokens in context slide, got {}", context_slide.len());
-        assert_eq!(context_slide, result, "Expected context slide to be {:?}, got {:?}", result, context_slide);
+
+        assert!(
+            context_slide.len() == 3,
+            "Expected 3 tokens in context slide, got {}",
+            context_slide.len()
+        );
+        assert_eq!(
+            context_slide, result,
+            "Expected context slide to be {:?}, got {:?}",
+            result, context_slide
+        );
     }
 
     #[test]
