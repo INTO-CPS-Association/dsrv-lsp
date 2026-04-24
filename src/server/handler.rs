@@ -16,8 +16,8 @@ impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
-                name: "DynSRV Language Server".to_string(),
-                version: Some("0.1.0".to_string()),
+                name: "DSRV Language Server".to_string(),
+                version: Some("1.0".to_string()),
             }),
 
             capabilities: ServerCapabilities {
@@ -43,16 +43,12 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Options(HoverOptions {
                     ..Default::default()
                 })),
-                
+
                 // TODO: Add support for definition and declaration providers in the future to enable jumping to definitions and declarations of input and output streams
                 // definition_provider: Some(OneOf::Left(true)),
                 // declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
                 //     work_done_progress_options: Default::default(),
                 // })),
-                // execute_command_provider: Some(ExecuteCommandOptions {
-                //     ..Default::default()
-                // }),
-
                 ..ServerCapabilities::default()
             },
             ..Default::default()
@@ -98,5 +94,132 @@ impl LanguageServer for Backend {
         //Give token based on the position of the hover and return hover information based on the token type (input, output, aux, expr)
         let hover = self.provide_hover(params);
         Ok(hover)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use macro_rules_attribute::apply;
+    use trustworthiness_checker::async_test;
+
+    use crate::fixtures;
+
+    use super::*;
+
+    #[apply(async_test)]
+    async fn test_initialize() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let result = backend
+            .initialize(InitializeParams::default())
+            .await
+            .unwrap();
+
+        let server_infox = result.server_info.unwrap();
+
+        assert_eq!(
+            server_infox.name, "DSRV Language Server",
+            "Expected server name to be 'DSRV Language Server'"
+        );
+        assert_eq!(
+            server_infox.version,
+            Some("1.0".to_string()),
+            "Expected version to be '1.0'"
+        );
+
+        // Check the server capabilities to ensure that the the implemented capabilities are correctly advertised and that the unimplemented capabilities are not advertised, this is important to ensure that the client can correctly interact with the server and that the server can provide the expected functionality to the client.
+        let server_cap = result.capabilities;
+        println!("Server Capabilities: {:#?}", server_cap);
+        assert!(
+            server_cap.hover_provider.is_some(),
+            "Expected hover provider to be supported"
+        );
+        assert!(
+            server_cap.completion_provider.is_some(),
+            "Expected completion provider to be supported"
+        );
+        assert!(
+            server_cap.text_document_sync.is_some(),
+            "Expected text document sync to be supported"
+        ); // This is where the diagnostic is also supported, not through the diagnostic provider as it don't need pull based diagnostics
+
+        assert!(
+            server_cap.definition_provider.is_none(),
+            "Expected definition provider to not be supported"
+        );
+        assert!(
+            server_cap.signature_help_provider.is_none(),
+            "Expected signature help provider to not be supported"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_shutdown() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let result = backend.shutdown().await;
+
+        assert!(result.is_ok(), "Expected shutdown to complete successfully");
+    }
+
+    #[apply(async_test)]
+    async fn test_completion() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let params = CompletionParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: Uri::from_file_path(
+                        "/home/emili/projects/dsrv-vscode/assets/test/test.dsrv",
+                    )
+                    .unwrap(),
+                },
+                position: Position {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        };
+
+        let result = backend.completion(params).await.unwrap();
+        println!("Completion Result: {:#?}", result);
+
+        //Test that the completion result gives a response, but as there is no actual code in the test file, it should not give any completion items, so the result should be None
+        assert!(result.is_none())
+    }
+
+    #[apply(async_test)]
+    async fn test_hover() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: Uri::from_file_path(
+                        "/home/emili/projects/dsrv-vscode/assets/test/test.dsrv",
+                    )
+                    .unwrap(),
+                },
+                position: Position {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let result = backend.hover(params).await.unwrap();
+
+        print!("Hover Result: {:#?}", result);
+
+        // As there is no actual code in the test file, there should be no token at the position of the hover, so the result should be None
+        assert!(result.is_none())
     }
 }

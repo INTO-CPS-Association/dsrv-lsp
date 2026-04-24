@@ -8,10 +8,10 @@
  * This project utilizes the 'trustworthiness-checker' crate, which is
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
 */
-use crate::lang::{
+use crate::{lang::{
     analyzer::Analysis,
     syntax::lexer::{self, TokenData},
-};
+}, server::Backend};
 
 #[allow(dead_code)]
 pub async fn analyze_spec(input: &str) -> Analysis {
@@ -21,6 +21,13 @@ pub async fn analyze_spec(input: &str) -> Analysis {
 #[allow(dead_code)]
 pub fn tokenize_input(input: &str) -> Vec<TokenData> {
     lexer::tokenize(input)
+}
+
+#[allow(dead_code, non_snake_case)]
+pub fn create_LSP_service() -> LspService<Backend> {
+  let (service, _ ) = tower_lsp_server::LspService::build(Backend::new).finish();
+  
+  service
 }
 
 #[allow(dead_code)]
@@ -69,6 +76,7 @@ pub fn input_untyped_complex_invalid() -> &'static str {
     "in iMap\nout oMap\nout nestedMap\nout mapGet\nout mapRemove\nout mapInsert\nout mapHasKey\noMap = iMap\nnestedMap = Map(\"a\": iMap, \"b\": iMap)\nmapGet = Map.get(iMap, \"x\")\nmapRemove = Map.remove(iMap, \"x\")\nmapInsert = Map.insert(iMap, \"z\", 42)\nmapHasKey = Map."
 }
 
+use tower_lsp_server::LspService;
 use trustworthiness_checker::lang::dsrv::{
     ast::{SExpr, STopDecl, SpannedExpr},
     span::Span,
