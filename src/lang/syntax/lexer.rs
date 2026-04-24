@@ -16,37 +16,38 @@ use logos::{Lexer, Logos};
 // use tower_lsp_server::ls_types::{Diagnostic, Range};
 
 // Custom function to handle block comments, allowing for nested block comments
-fn lex_block_comment(lex: &mut Lexer<Token>) -> Result<(), LexerError> {
-    let remainder = lex.remainder();
-    let mut depth = 1;
-    let mut chars = remainder.char_indices().peekable();
-    while let Some((i, c)) = chars.next() {
-        match c {
-            '*' => {
-                // Check for closing of block comment
-                if chars.peek().map(|(_, c)| *c) == Some(')') {
-                    chars.next(); // Consume the ')'
-                    depth -= 1; // Decrease depth for block comment nesting
-                    if depth == 0 {
-                        // If depth is zero, we have closed all nested block comments
-                        lex.bump(i + "*)".len()); // Advance the lexer past the closing '*)'
-                        return Ok(());
-                    }
-                }
-            }
-            '(' => {
-                // Check for nesting of block comment
-                if chars.peek().map(|(_, c)| *c) == Some('*') {
-                    chars.next(); // Consume the '*'
-                    depth += 1; // Increase depth for block comment nesting
-                }
-            }
-            _ => {} // Ignore other characters
-        }
-    }
-    lex.bump(remainder.len());
-    Err(LexerError::UnclosedComment)
-}
+// Removed as the parser does not support nested block comments
+// fn lex_block_comment(lex: &mut Lexer<Token>) -> Result<(), LexerError> {
+//     let remainder = lex.remainder();
+//     let mut depth = 1;
+//     let mut chars = remainder.char_indices().peekable();
+//     while let Some((i, c)) = chars.next() {
+//         match c {
+//             '*' => {
+//                 // Check for closing of block comment
+//                 if chars.peek().map(|(_, c)| *c) == Some(')') {
+//                     chars.next(); // Consume the ')'
+//                     depth -= 1; // Decrease depth for block comment nesting
+//                     if depth == 0 {
+//                         // If depth is zero, we have closed all nested block comments
+//                         lex.bump(i + "*)".len()); // Advance the lexer past the closing '*)'
+//                         return Ok(());
+//                     }
+//                 }
+//             }
+//             '(' => {
+//                 // Check for nesting of block comment
+//                 if chars.peek().map(|(_, c)| *c) == Some('*') {
+//                     chars.next(); // Consume the '*'
+//                     depth += 1; // Increase depth for block comment nesting
+//                 }
+//             }
+//             _ => {} // Ignore other characters
+//         }
+//     }
+//     lex.bump(remainder.len());
+//     Err(LexerError::UnclosedComment)
+// }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum LexerError {
@@ -79,8 +80,8 @@ pub enum LexerError {
 pub enum Token {
     #[regex(r"//[^\n\r]*", allow_greedy = true)]
     LineComment,
-    #[token("(*", lex_block_comment)]
-    BlockComment,
+    // #[token("(*", lex_block_comment)]
+    // BlockComment,
 
     // Keywords
     #[token("true")]
@@ -245,7 +246,7 @@ pub fn tokenize(text: &str) -> Vec<TokenData> {
         match token_result {
             Ok(t) => {
                 // Ignore whitespace and comments
-                if t != Token::Whitespace && t != Token::LineComment && t != Token::BlockComment {
+                if t != Token::Whitespace && t != Token::LineComment /* && t != Token::BlockComment  */{
                     tokens.push(TokenData {
                         token: t,
                         content,
@@ -347,7 +348,7 @@ mod test {
 
     #[test]
     fn test_tokenize_simple_input() {
-        let input = fixtures::input_valid_simple();
+        let input = fixtures::input_untyped_valid_simple();
         let tokens = fixtures::tokenize_input(input);
 
         println!("Tokens: {:#?}", tokens);
@@ -373,7 +374,7 @@ mod test {
 
     #[test]
     fn test_tokenize_typed_input() {
-        let input = fixtures::input_valid_typed();
+        let input = fixtures::input_typed_valid_simple();
         let tokens = fixtures::tokenize_input(input);
 
         println!("Tokens: {:#?}", tokens);
@@ -392,7 +393,7 @@ mod test {
 
     #[test]
     fn test_tokenize_invalid_input() {
-        let input = fixtures::input_invalid_simple();
+        let input = fixtures::input_untyped_invalid_simple();
         let tokens = fixtures::tokenize_input(input);
 
         println!("Tokens: {:#?}", tokens);
@@ -418,19 +419,21 @@ mod test {
 
     #[test]
     fn test_get_context_slide() {
-        let input = fixtures::input_invalid_simple();
+        use crate::lang::syntax::lexer::Token::*;
+
+        let input = fixtures::input_untyped_invalid_simple();
         let tokens = fixtures::tokenize_input(input);
 
         let context_slide = get_context_slice(&tokens, 15, 2);
 
         let result = vec![
             TokenData {
-                token: Token::Identifier,
+                token: Identifier,
                 content: "z".to_string(),
                 span: 11..12,
             },
             TokenData {
-                token: Token::Eq,
+                token: Eq,
                 content: "=".to_string(),
                 span: 13..14,
             },
@@ -449,24 +452,74 @@ mod test {
             result, context_slide
         );
     }
-    
+
+    #[test]
+    fn test_get_context_slide_complex() {
+        use crate::lang::syntax::lexer::Token::*;
+        let input = fixtures::input_untyped_complex_invalid();
+        let tokens = fixtures::tokenize_input(input);
+
+        let context_slide = get_context_slice(&tokens, 250, 3);
+
+        println!("Context slide: {:#?}", context_slide);
+
+        let result = vec![
+            TokenData {
+                token: Eq,
+                content: "=".to_string(),
+                span: 244..245,
+            },
+            TokenData {
+                token: Map,
+                content: "Map".to_string(),
+                span: 246..249,
+            },
+            TokenData {
+                token: Dot,
+                content: ".".to_string(),
+                span: 249..250,
+            },
+        ];
+        
+        assert!(context_slide.len() == 3, "Expected 3 tokens in context slide, got {}", context_slide.len());
+        assert_eq!(context_slide, result, "Expected context slide to be {:?}, got {:?}", result, context_slide);
+    }
+
     #[test]
     fn test_filter_suggestions_simple() {
-      let input = fixtures::input_invalid_simple();
-      let tokens = fixtures::tokenize_input(input);
-      
-      let filter = filter_suggestions(15, &tokens);
-      
-      println!("Filter: {:#?}", filter);
-      
-      assert!(!filter.is_empty(), "Expected suggestions, got none");
-      
-      assert_eq!(filter, vec!["expr"], "Expected [\"expr\"], but got {:?}", filter);
+        let input = fixtures::input_untyped_invalid_simple();
+        let tokens = fixtures::tokenize_input(input);
+
+        let filter = filter_suggestions(15, &tokens);
+
+        println!("Filter: {:#?}", filter);
+
+        assert!(!filter.is_empty(), "Expected suggestions, got none");
+
+        assert_eq!(
+            filter,
+            vec!["expr"],
+            "Expected [\"expr\"], but got {:?}",
+            filter
+        );
     }
-    
+
     #[test]
     fn test_filter_suggestions_complex() {
-      
-    
+        let input = fixtures::input_untyped_complex_invalid();
+        let tokens = fixtures::tokenize_input(input);
+
+        let filter = filter_suggestions(250, &tokens);
+
+        println!("Filter: {:#?}", filter);
+
+        assert!(!filter.is_empty(), "Expected suggestions, got none");
+
+        assert_eq!(
+            filter,
+            vec!["map method"],
+            "Expected [\"map method\"], but got {:?}",
+            filter
+        );
     }
 }

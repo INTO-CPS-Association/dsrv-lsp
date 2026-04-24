@@ -136,24 +136,13 @@ mod test {
     use macro_rules_attribute::apply;
     use trustworthiness_checker::async_test;
 
+    use crate::fixtures;
+
     use super::*;
 
     #[test]
     fn test_extract_nodes_simple() {
-        let spanned = SpannedExpr {
-            node: SExpr::BinOp(
-                Box::new(SpannedExpr {
-                    node: SExpr::Val(1.into()),
-                    span: Span { start: 0, end: 1 },
-                }),
-                Box::new(SpannedExpr {
-                    node: SExpr::Val(2.into()),
-                    span: Span { start: 4, end: 5 },
-                }),
-                "+".into(),
-            ),
-            span: Span { start: 0, end: 5 },
-        };
+        let spanned = fixtures::input_ast_simple();
         let mut nodes = Vec::new();
         extract_nodes(&spanned, &mut nodes);
 
@@ -173,32 +162,7 @@ mod test {
 
     #[test]
     fn test_extract_nodes_complex() {
-        let spanned = SpannedExpr {
-            node: SExpr::If(
-                Box::new(SpannedExpr {
-                    node: SExpr::Var("x".into()),
-                    span: Span { start: 0, end: 1 },
-                }),
-                Box::new(SpannedExpr {
-                    node: SExpr::Default(
-                        Box::new(SpannedExpr {
-                            node: SExpr::Val(1.into()),
-                            span: Span { start: 4, end: 5 },
-                        }),
-                        Box::new(SpannedExpr {
-                            node: SExpr::Val(2.into()),
-                            span: Span { start: 8, end: 9 },
-                        }),
-                    ),
-                    span: Span { start: 4, end: 9 },
-                }),
-                Box::new(SpannedExpr {
-                    node: SExpr::Val(3.into()),
-                    span: Span { start: 12, end: 13 },
-                }),
-            ),
-            span: Span { start: 0, end: 13 },
-        };
+        let spanned = fixtures::input_ast_long();
         let mut nodes = Vec::new();
         extract_nodes(&spanned, &mut nodes);
 
@@ -220,32 +184,8 @@ mod test {
 
     #[test]
     fn test_extract_from_stmts() {
-        let stmts = vec![
-            STopDecl::Input("x".into(), None, Span { start: 0, end: 4 }),
-            STopDecl::Input("y".into(), None, Span { start: 5, end: 9 }),
-            STopDecl::Output("z".into(), None, Span { start: 10, end: 15 }),
-            STopDecl::Assignment(
-                "z".into(),
-                SpannedExpr {
-                    node: SExpr::BinOp(
-                        Box::new(SpannedExpr {
-                            node: SExpr::Var("x".into()),
-                            span: Span { start: 21, end: 22 },
-                        }),
-                        Box::new(SpannedExpr {
-                            node: SExpr::Var("y".into()),
-                            span: Span { start: 25, end: 26 },
-                        }),
-                        "+".into(),
-                    ),
-                    span: Span { start: 21, end: 26 },
-                },
-                Span { start: 17, end: 26 },
-            ),
-        ];
-
-        // println!("Statements: {:#?}", stmts);
-
+        let stmts = fixtures::input_stmts_simple();
+        
         let mut results = Vec::new();
         extract_from_stmts(&stmts, &mut results);
 
@@ -278,21 +218,9 @@ mod test {
 
     #[apply(async_test)]
     async fn test_node_at_offset() {
-        let spanned_nodes = vec![
-            SpannedExpr {
-                node: SExpr::Var("x".into()),
-                span: Span { start: 0, end: 4 },
-            },
-            SpannedExpr {
-                node: SExpr::Var("y".into()),
-                span: Span { start: 5, end: 9 },
-            },
-            SpannedExpr {
-                node: SExpr::Var("z".into()),
-                span: Span { start: 10, end: 15 },
-            },
-        ];
-
+        let spanned_nodes = fixtures::input_spanned_nodes_simple();
+        
+        // Make an analysis with the spanned nodes
         let analysis = Analysis {
             spec: None,
             typed: None,

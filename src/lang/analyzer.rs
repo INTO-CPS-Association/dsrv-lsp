@@ -35,7 +35,7 @@ impl Analysis {
     pub async fn analyze_specification(text: &str) -> Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
-                log::info!("stmts: {:#?}", stmts);
+                // log::info!("stmts: {:#?}", stmts);
                 // log::info!("stmts: {:?}", stmts[0]);
                 // log::info!("lenth: {:?}", stmts.len());
                 // log::info!("Parsed specification: {:#?}", spec);
@@ -178,14 +178,14 @@ impl Analysis {
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use crate::fixtures;
     use macro_rules_attribute::apply;
     use trustworthiness_checker::async_test;
-    use crate::fixtures;
-    use super::*;
 
     #[apply(async_test)]
     async fn test_analyze_syntax_valid_input_not_typed() {
-        let input = fixtures::input_valid_simple();
+        let input = fixtures::input_untyped_valid_simple();
         let analysis = fixtures::analyze_spec(input).await;
 
         assert!(
@@ -203,7 +203,7 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_syntax_valid_input_typed() {
-        let input = fixtures::input_valid_typed();
+        let input = fixtures::input_typed_valid_simple();
         let analysis = fixtures::analyze_spec(input).await;
 
         // println!("Analysis result: {:#?}", analysis.clone());
@@ -265,8 +265,8 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_syntax_invalid_input() {
-        let input = fixtures::input_invalid_simple();
-        let analysis =fixtures::analyze_spec(input).await;
+        let input = fixtures::input_untyped_invalid_simple();
+        let analysis = fixtures::analyze_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
 
@@ -289,7 +289,7 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_semantic_type_error() {
-        let input = fixtures::input_invalid_typed();
+        let input = fixtures::input_typed_invalid_simple();
         let analysis = fixtures::analyze_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
@@ -394,5 +394,38 @@ mod test {
             "Expected diagnostic severity to be ERROR, but got: {:?}",
             diag.severity
         );
+    }
+
+    #[apply(async_test)]
+    async fn test_analyze_untyped_with_comments() {
+        let input = fixtures::input_untyped_simple_with_comments();
+        let analysis = fixtures::analyze_spec(input).await;
+
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            analysis.diags.is_empty(),
+            "Expected no diagnostics for valid input with comments, but got: {:?}",
+            analysis.diags
+        );
+        // Testing that the spanned nodes do not include the comments by checking that the spans of the nodes do not overlap with the spans of the comments. as comment is after y but before z
+        assert!(
+            (analysis.spanned_nodes[2].span.start - 1) != analysis.spanned_nodes[1].span.end,
+            "Expected spanned nodes to not include comments, but got: {:#?}",
+            analysis.spanned_nodes
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_analyze_untyped_complex() {
+      let input = fixtures::input_untyped_complex_with_comments();
+      let analysis = fixtures::analyze_spec(input).await;
+
+      println!("Analysis result: {:#?}", analysis);
+      
+      assert!(analysis.diags.is_empty(), "Expected no diagnostics for valid complex input, but got: {:#?}", analysis.diags);
+      assert!(!analysis.spec.is_none(), "Expected spec to be Some for valid complex input, but got: {:#?}", analysis.spec);
+      
+      assert!(!analysis.spanned_nodes.is_empty(), "Expected spanned nodes to be extracted for valid complex input, but got: {:#?}", analysis.spanned_nodes);
     }
 }
