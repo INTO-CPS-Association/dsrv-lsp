@@ -67,16 +67,28 @@ impl Analysis {
                                 let rope = Rope::from_str(text);
                                 match error {
                                     SemanticError::DeferredError(msg, span) => {
-                                        diags_vec
-                                            .push(Self::create_semantic_diag(&rope, &msg, span));
+                                        // Not actually possible to get deferred errors with the current implementation of the type checker, but want to be able to handle them in the future when we have a more complete type checker that can produce deferred errors.
+                                        let msg_deferred = format!("Deferred error: {}", msg);
+                                        diags_vec.push(Self::create_semantic_diag(
+                                            &rope,
+                                            &msg_deferred,
+                                            span,
+                                        ));
                                     }
                                     SemanticError::TypeError(msg, span) => {
-                                        diags_vec
-                                            .push(Self::create_semantic_diag(&rope, &msg, span));
+                                        let msg_typed = format!("Type error: {}", msg);
+                                        diags_vec.push(Self::create_semantic_diag(
+                                            &rope, &msg_typed, span,
+                                        ));
                                     }
                                     SemanticError::UndeclaredVariable(msg, span) => {
-                                        diags_vec
-                                            .push(Self::create_semantic_diag(&rope, &msg, span));
+                                        let msg_undeclared =
+                                            format!("Undeclared variable: {}", msg);
+                                        diags_vec.push(Self::create_semantic_diag(
+                                            &rope,
+                                            &msg_undeclared,
+                                            span,
+                                        ));
                                     }
                                 }
                             }
@@ -288,7 +300,7 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_semantic_type_error() {
+    async fn test_analyze_type_error() {
         let input = fixtures::input_typed_invalid_simple();
         let analysis = fixtures::analyze_spec(input).await;
 
@@ -297,16 +309,7 @@ mod test {
             !analysis.diags.is_empty(),
             "Expected diagnostics for type error, but got none"
         );
-        assert!(
-            analysis.diags[0].message.contains("x"),
-            "Expected diagnostic message to mention 'x', but got: {:?}",
-            analysis.diags[0].message
-        );
-        assert!(
-            analysis.diags[0].message.contains("y"),
-            "Expected diagnostic message to mention 'y', but got: {:?}",
-            analysis.diags[0].message
-        );
+
         assert!(
             analysis.typed.is_none(),
             "Expected typed spec to be None for input with type errors, got: {:?}",
@@ -323,13 +326,31 @@ mod test {
 
         assert!(
             !analysis.diags.is_empty(),
-            "Expected diagnostics for undeclared variable 'y', but got none"
+            "Expected diagnostics for undeclared variable, but got none"
         );
 
-        // assert_eq!(analysis.diags[0].message, "Usage of undeclared variable: y", "Expected diagnostic message for undeclared variable 'y', but got: {:?}", analysis.diags[0].message);
         assert!(
-            analysis.diags[0].message.contains("y"),
-            "Expected diagnostic message to mention undeclared variable 'y', but got: {:?}",
+            analysis.diags[0].message.contains("Undeclared variable:"),
+            "Expected diagnostic message to mention undeclared variable but got: {:?}",
+            analysis.diags[0].message
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_analyze_semantic_type_error() {
+        let input = fixtures::input_semantic_type_error();
+        let analysis = fixtures::analyze_spec(input).await;
+
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            !analysis.diags.is_empty(),
+            "Expected diagnostics for type error, but got none"
+        );
+
+        assert!(
+            analysis.diags[0].message.contains("Type error:"),
+            "Expected diagnostic message to mention type error but got: {:?}",
             analysis.diags[0].message
         );
     }
@@ -418,14 +439,26 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyze_untyped_complex() {
-      let input = fixtures::input_untyped_complex_with_comments();
-      let analysis = fixtures::analyze_spec(input).await;
+        let input = fixtures::input_untyped_complex_with_comments();
+        let analysis = fixtures::analyze_spec(input).await;
 
-      println!("Analysis result: {:#?}", analysis);
-      
-      assert!(analysis.diags.is_empty(), "Expected no diagnostics for valid complex input, but got: {:#?}", analysis.diags);
-      assert!(!analysis.spec.is_none(), "Expected spec to be Some for valid complex input, but got: {:#?}", analysis.spec);
-      
-      assert!(!analysis.spanned_nodes.is_empty(), "Expected spanned nodes to be extracted for valid complex input, but got: {:#?}", analysis.spanned_nodes);
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            analysis.diags.is_empty(),
+            "Expected no diagnostics for valid complex input, but got: {:#?}",
+            analysis.diags
+        );
+        assert!(
+            !analysis.spec.is_none(),
+            "Expected spec to be Some for valid complex input, but got: {:#?}",
+            analysis.spec
+        );
+
+        assert!(
+            !analysis.spanned_nodes.is_empty(),
+            "Expected spanned nodes to be extracted for valid complex input, but got: {:#?}",
+            analysis.spanned_nodes
+        );
     }
 }

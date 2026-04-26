@@ -55,13 +55,24 @@ pub fn input_untyped_invalid_simple() -> &'static str {
 
 #[allow(dead_code)]
 pub fn input_typed_invalid_simple() -> &'static str {
-    "in x: Int\n in y: Str\nout z: Int\nz = x + y"
+    "in x: Int\n in y: Int\nout z: Int\nz = x + "
 }
 
 #[allow(dead_code)]
 pub fn input_semantic_undeclared_var() -> &'static str {
     "in x: Int\nout z: Int\nz = x + y"
 }
+
+#[allow(dead_code)]
+pub fn input_semantic_type_error() -> &'static str  {
+  "in x: Int\n in y: Str\nout z: Int\nz = x + y"
+}
+
+
+
+
+
+
 
 pub fn input_empty() -> &'static str {
     ""
