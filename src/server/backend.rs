@@ -39,6 +39,7 @@ macro_rules! hover_doc {
     };
 }
 
+#[derive(Debug, Clone)]
 pub struct Backend {
     pub client: Client,
     // Store the analysis, rope and lexed tokens for each document URI.
@@ -58,9 +59,7 @@ impl Backend {
         }
     }
     pub async fn change(&self, uri: Uri, text: &str) {
-        match uri.to_file_path() {
-            // Try to convert URI to file path, if it fails, log an error message and skip analysis to avoid trying to analyse not file windows such as the output or terminal window
-            Some(_path) => {
+
                 self.logger(format!("Analyzing document `{:?}`", uri), MessageType::INFO)
                     .await;
 
@@ -80,16 +79,7 @@ impl Backend {
                     .publish_diagnostics(uri.clone(), diags, None)
                     .await;
             }
-            None => {
-                // If URI conversion fails, log an error message and skip analysis
-                self.logger(
-                    format!("Failed to convert URI `{:?}` to file path", uri),
-                    MessageType::ERROR,
-                )
-                .await;
-            }
-        }
-    }
+
 
     // function to provide completion items based on the current position in the document and the context of the code at that position.
     pub fn get_completion(&self, params: CompletionParams) -> Option<Vec<CompletionItem>> {
