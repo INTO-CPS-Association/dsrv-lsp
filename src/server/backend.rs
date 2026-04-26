@@ -207,6 +207,7 @@ pub struct Variables {
     pub detail: String,
 }
 
+// TODO: Add support for typed variables to be able to provide type information in the completion items.
 // Convert specification items into completion items for autocompletion
 fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
     let mut items = Vec::new();
@@ -221,16 +222,6 @@ fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
         };
         items.push(item);
     }
-    for name in &spec.output_vars {
-        let item = Variables {
-            label: name.into(),
-            kind: CompletionItemKind::VARIABLE,
-            trigger_context: &["expr", "output_stream", "variable"],
-            type_anno: None,
-            detail: "Output Stream".to_string(),
-        };
-        items.push(item);
-    }
     for name in &spec.aux_info {
         let item = Variables {
             label: name.into(),
@@ -240,6 +231,19 @@ fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
             detail: "Auxiliary internal stream variable".to_string(),
         };
         items.push(item);
+    }
+    for name in &spec.output_vars {
+        // Check if the variable is already in, as aux vars is both parsed as output and aux variables, so they will be in both lists, but we only want to add them once with the aux variable information as that is more specific.
+        if !spec.aux_info.contains(name) {
+            let item = Variables {
+                label: name.into(),
+                kind: CompletionItemKind::VARIABLE,
+                trigger_context: &["expr", "output_stream", "variable"],
+                type_anno: None,
+                detail: "Output Stream".to_string(),
+            };
+            items.push(item);
+        }
     }
     items
 }
