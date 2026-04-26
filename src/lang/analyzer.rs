@@ -43,7 +43,7 @@ impl Analysis {
                 // Use the pattern matching function to extract all spanned nodes into a flat vector.
                 let mut nodes = Vec::new();
                 extract_from_stmts(&stmts, &mut nodes);
-                // log::info!("Extracted spanned nodes: {:#?}", nodes);
+                log::info!("Extracted spanned nodes: {:#?}", nodes);
 
                 // Create the DSRV specification from the parsed statements for type_checker and semantic errors
                 let spec = create_dsrv_spec(&stmts);

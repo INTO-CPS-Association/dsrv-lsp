@@ -388,8 +388,20 @@ mod test {
             vars.len() == 11,
             "Expected 11 declared symbols, found {}",
             vars.len()
-        )
+        );
+
+        assert!(
+            vars[10].label == "safeSwap".to_string(),
+            "Expected last declared symbol to be `safeSwap`, found `{}`",
+            vars[10].label
+        );
+        assert!(
+            vars[3].label == "swapRequestHelper",
+            "Expected 4th declared symbol to be `swapRequestHelper`, found `{}`",
+            vars[3].label
+        );
     }
+
     // Realised I never made it able to handle typed variables in the backend.
     // #[apply(async_test)]
     // async fn test_get_all_declared_symbols_typed() {
@@ -818,22 +830,30 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_get_builtin() {
-        let builtin = get_builtin_by_label("in");
+    async fn test_builtin_label() {
+        let nodes = fixtures::input_spanned_nodes_complex();
+
+        assert!(nodes.len() > 0, "Expected spanned nodes, found none");
+
+        println!("Spanned nodes: {:#?}", nodes);
+
+        // let node = &nodes[4];
+        // println!("Node: {:?}", node);
+
+        let label = &nodes[4].node.builtin_label().unwrap();
+        println!("Builtin label for node: {:?}", label);
         assert!(
-            builtin.is_some(),
-            "Expected to find built-in function with label `in`"
+            label == &"defer",
+            "Expected builtin label `defer`, found `{}`",
+            label
         );
-        let builtin = builtin.unwrap();
+
+        let label = &nodes[5].node.builtin_label().unwrap();
+        println!("Builtin label for node: {:?}", label);
         assert!(
-            builtin.label == "in",
-            "Expected built-in label to be `in`, found `{}`",
-            builtin.label
-        );
-        assert!(
-            builtin.documentation.contains("Declares an input stream"),
-            "Expected documentation to contain 'Declares an input stream', found `{}`",
-            builtin.documentation
+            label == &"default",
+            "Expected builtin label `default`, found `{}`",
+            label
         );
     }
 }

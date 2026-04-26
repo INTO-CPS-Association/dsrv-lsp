@@ -186,3 +186,67 @@ pub fn input_spanned_nodes_simple() -> Vec<SpannedExpr> {
         },
     ]
 }
+
+#[allow(dead_code)]
+pub fn input_spanned_nodes_complex() -> Vec<SpannedExpr> {
+    use trustworthiness_checker::core::StreamTypeAscription::Unascribed;
+    vec![
+        SpannedExpr {
+            node: SExpr::Var("x".into()),
+            span: Span { start: 0, end: 4 },
+        },
+        SpannedExpr {
+            node: SExpr::Var("e".into()),
+            span: Span { start: 5, end: 9 },
+        },
+        SpannedExpr {
+            node: SExpr::Var("z".into()),
+            span: Span { start: 10, end: 15 },
+        },
+        SpannedExpr {
+            node: SExpr::Var("z".into()),
+            span: Span { start: 16, end: 17 },
+        },
+        SpannedExpr {
+            node: SExpr::Defer(
+                Box::new(SpannedExpr {
+                    node: SExpr::Default(
+                        Box::new(SpannedExpr {
+                            node: SExpr::Var("e".into()),
+                            span: Span { start: 34, end: 35 },
+                        }),
+                        Box::new(SpannedExpr {
+                            node: SExpr::Val("x".into()),
+                            span: Span { start: 37, end: 40 },
+                        }),
+                    ),
+                    span: Span { start: 26, end: 41 },
+                }),
+                Unascribed,
+                [].into(),
+            ),
+            span: Span { start: 20, end: 42 },
+        },
+        SpannedExpr {
+            node: SExpr::Default(
+                Box::new(SpannedExpr {
+                    node: SExpr::Var("e".into()),
+                    span: Span { start: 34, end: 35 },
+                }),
+                Box::new(SpannedExpr {
+                    node: SExpr::Val("x".into()),
+                    span: Span { start: 37, end: 40 },
+                }),
+            ),
+            span: Span { start: 26, end: 41 },
+        },
+        SpannedExpr {
+            node: SExpr::Var("e".into()),
+            span: Span { start: 34, end: 35 },
+        },
+        SpannedExpr {
+            node: SExpr::Val("x".into()),
+            span: Span { start: 37, end: 40 },
+        },
+    ]
+}
