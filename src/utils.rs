@@ -12,7 +12,6 @@
 use ropey::Rope;
 use tower_lsp_server::ls_types::Position;
 
-
 // Converts a byte index in the text to a Position (line and column) for LSP diagnostics.
 pub fn byte_to_pos(rope: &Rope, byte: usize) -> Option<Position> {
     let line = rope.byte_to_line(byte);
@@ -22,13 +21,81 @@ pub fn byte_to_pos(rope: &Rope, byte: usize) -> Option<Position> {
     Some(Position::new(line as u32, col as u32))
 }
 
-
 // The functions is derived from the "tower-lsp-boilerplate" project by IWANABETHATGUY under the MIT Licence
 pub fn pos_to_offset(pos: Position, rope: &Rope) -> Option<u32> {
-  if pos.line as usize >= rope.len_lines() {
-    return None;
-  }
-  let line_byte_offset = rope.line_to_byte(pos.line as usize);
-  let offset = line_byte_offset + pos.character as usize;
-  Some(offset as u32)
+    if pos.line as usize >= rope.len_lines() {
+        return None;
+    }
+    let line_byte_offset = rope.line_to_byte(pos.line as usize);
+    let offset = line_byte_offset + pos.character as usize;
+    Some(offset as u32)
+}
+
+#[cfg(test)]
+mod test {
+    use crate::fixtures;
+
+    use super::*;
+
+    #[test]
+    fn test_byte_to_pos_simple() {
+        let rope = Rope::from_str(fixtures::input_untyped_valid_simple());
+        println!("Rope content:\n{}", rope);
+
+        let pos = byte_to_pos(&rope, 7).unwrap();
+
+        let result = Position::new(1, 2); // line 2 (0-based) and column 2 (0-based)
+        println!("Position: {:#?}", pos);
+
+        assert_eq!(
+            pos, result,
+            "Expected position {:#?} but got {:#?}",
+            result, pos
+        );
+    }
+
+    #[test]
+    fn test_byte_to_pos_complex() {
+        let rope = Rope::from_str(fixtures::input_untyped_complex_with_comments());
+
+        let pos = byte_to_pos(&rope, 523);
+        let result = Position::new(18, 23);
+        println!("Position: {:#?}", pos);
+
+        assert_eq!(
+            pos,
+            Some(result),
+            "Expected position {:#?} but got {:#?}",
+            result,
+            pos
+        );
+    }
+
+    #[test]
+    fn test_pos_to_offset_simple() {
+        let rope = Rope::from_str(fixtures::input_untyped_valid_simple());
+        let pos = Position::new(1, 2); // line 2 (0-based) and column 2 (0-based)
+        let offset = pos_to_offset(pos, &rope).unwrap();
+        let expected_offset = 7; // 'y' in "in y"
+        println!("Offset: {}", offset);
+        assert_eq!(
+            offset, expected_offset,
+            "Expected offset {} but got {}",
+            expected_offset, offset
+        );
+    }
+
+    #[test]
+    fn test_pos_to_offset_complex() {
+        let rope = Rope::from_str(fixtures::input_untyped_complex_with_comments());
+        let pos = Position::new(18, 23);
+        let offset = pos_to_offset(pos, &rope).unwrap();
+        let expected_offset = 523; // 'y' in "z = x + y"
+        println!("Offset: {}", offset);
+        assert_eq!(
+            offset, expected_offset,
+            "Expected offset {} but got {}",
+            expected_offset, offset
+        );
+    }
 }
