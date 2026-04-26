@@ -8,10 +8,13 @@
  * This project utilizes the 'trustworthiness-checker' crate, which is
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
 */
-use crate::{lang::{
-    analyzer::Analysis,
-    syntax::lexer::{self, TokenData},
-}, server::Backend};
+use crate::{
+    lang::{
+        analyzer::Analysis,
+        syntax::lexer::{self, TokenData},
+    },
+    server::Backend,
+};
 
 #[allow(dead_code)]
 pub async fn analyze_spec(input: &str) -> Analysis {
@@ -25,9 +28,14 @@ pub fn tokenize_input(input: &str) -> Vec<TokenData> {
 
 #[allow(dead_code, non_snake_case)]
 pub fn create_LSP_service() -> LspService<Backend> {
-  let (service, _ ) = tower_lsp_server::LspService::build(Backend::new).finish();
-  
-  service
+    let (service, _) = tower_lsp_server::LspService::build(Backend::new).finish();
+
+    service
+}
+
+#[allow(dead_code, non_snake_case)]
+pub fn create_URI_path() -> ls_types::Uri {
+    ls_types::Uri::from_file_path("/home/emili/projects/dsrv-vscode/assets/test/test.dsrv").unwrap()
 }
 
 #[allow(dead_code)]
@@ -42,7 +50,7 @@ pub fn input_typed_valid_simple() -> &'static str {
 
 #[allow(dead_code)]
 pub fn input_untyped_invalid_simple() -> &'static str {
-    "in x\nout z\nz = "
+    "in x\nout z\nz ="
 }
 
 #[allow(dead_code)]
@@ -64,6 +72,10 @@ pub fn input_untyped_simple_with_comments() -> &'static str {
     "in x\nin y // test - comments\nout z\nz = x + y //test comment"
 }
 
+#[allow(dead_code)]
+pub fn input_typed_valid_complex() -> &'static str {
+    "in m : Bool\nin a : Bool\nin p : Bool\nin l : Bool\nin e : Bool\nout mout : Bool\nout aout : Bool\nout pout : Bool\nout lout : Bool\nout eout : Bool\nout maple : Bool\nout globallymaple : Bool\nmout = m && !a && !p && !l && !e && default(eout[1], true)\naout = !m && a && !p && !l && !e && default(mout[1], false)\npout = !m && !a && p && !l && !e && default(aout[1], false)\nlout = !m && !a && !p && l && !e && default(pout[1], false)\neout = !m && !a && !p && !l && e && default(lout[1], false)\nmaple = mout || aout || pout || lout || eout\ngloballymaple = maple && default(maple[1], true)"
+}
 // Code snippet from the robosapiens-trustworthiness-checker by the Into-CPS organization under the GPL licence
 #[allow(dead_code)]
 pub fn input_untyped_complex_with_comments() -> &'static str {
@@ -76,7 +88,7 @@ pub fn input_untyped_complex_invalid() -> &'static str {
     "in iMap\nout oMap\nout nestedMap\nout mapGet\nout mapRemove\nout mapInsert\nout mapHasKey\noMap = iMap\nnestedMap = Map(\"a\": iMap, \"b\": iMap)\nmapGet = Map.get(iMap, \"x\")\nmapRemove = Map.remove(iMap, \"x\")\nmapInsert = Map.insert(iMap, \"z\", 42)\nmapHasKey = Map."
 }
 
-use tower_lsp_server::LspService;
+use tower_lsp_server::{LspService, ls_types};
 use trustworthiness_checker::lang::dsrv::{
     ast::{SExpr, STopDecl, SpannedExpr},
     span::Span,

@@ -59,27 +59,25 @@ impl Backend {
         }
     }
     pub async fn change(&self, uri: Uri, text: &str) {
+        self.logger(format!("Analyzing document `{:?}`", uri), MessageType::INFO)
+            .await;
 
-                self.logger(format!("Analyzing document `{:?}`", uri), MessageType::INFO)
-                    .await;
+        // If URI is successfully converted to file path, proceed with analysis
+        self.document_map.insert(uri.clone(), Rope::from_str(text));
+        self.token_map.insert(uri.clone(), tokenize(text));
 
-                // If URI is successfully converted to file path, proceed with analysis
-                self.document_map.insert(uri.clone(), Rope::from_str(text));
-                self.token_map.insert(uri.clone(), tokenize(text));
+        let analysis = Analysis::analyze_specification(&text).await;
+        let diags = analysis.diags.clone(); // Clone diagnostics to avoid ownership issues when inserting analysis into the map later.
 
-                let analysis = Analysis::analyze_specification(&text).await;
-                let diags = analysis.diags.clone(); // Clone diagnostics to avoid ownership issues when inserting analysis into the map later.
+        // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document
+        if analysis.spec.is_some() {
+            self.analysis_map.insert(uri.clone(), analysis);
+        }
 
-                // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document
-                if analysis.spec.is_some() {
-                    self.analysis_map.insert(uri.clone(), analysis);
-                }
-
-                self.client
-                    .publish_diagnostics(uri.clone(), diags, None)
-                    .await;
-            }
-
+        self.client
+            .publish_diagnostics(uri.clone(), diags, None)
+            .await;
+    }
 
     // function to provide completion items based on the current position in the document and the context of the code at that position.
     pub fn get_completion(&self, params: CompletionParams) -> Option<Vec<CompletionItem>> {
@@ -137,13 +135,13 @@ impl Backend {
 
         let analysis_ref = self.analysis_map.get(&uri_key)?;
         let analysis = analysis_ref.value();
-        
+
         let rope = self.document_map.get(&uri_key)?;
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
-        
+
         let node = Analysis::node_at_offset(&analysis, pos_offset)?;
         log::info!("Node at offset {}: {:?}", pos_offset, node);
-        
+
         // Match the node at the current offset with the corresponding built-in function to provide hover information. If the node is not a built-in function, return None to indicate that no hover information is available for that symbol.
         //TODO:This will give wrong hover info if the user is hovering over an area that has changed but was never syntactically correct, So the old AST is still present and provides hover information that does not match the current code. Could be solved by comparing with the lexed token map and use that as backup if the AST node does not match the token to still return something
         if let Some(label) = node.builtin_label() {
@@ -191,14 +189,7 @@ impl Backend {
     }
 }
 
-// Helper function to get line from position
-fn _pos_to_slice(pos: Position, rope: &Rope) -> Option<String> {
-    let line = rope.line(pos.line as usize);
-    log::info!("Extracted line at position: `{}`", line);
-    Some(line.to_string())
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Variables {
     pub label: String,
     pub kind: CompletionItemKind,
@@ -290,6 +281,7 @@ fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
 pub trait SExprHoverExt {
     fn builtin_label(&self) -> Option<&'static str>;
 }
+
 impl SExprHoverExt for SExpr {
     fn builtin_label(&self) -> Option<&'static str> {
         match self {
@@ -324,5 +316,524 @@ impl SExprHoverExt for SExpr {
             SExpr::Not(..) => Some("Not"),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use macro_rules_attribute::apply;
+    use trustworthiness_checker::async_test;
+
+    use crate::fixtures;
+
+    use super::*;
+
+    #[apply(async_test)]
+    async fn test_get_all_declared_symbols() {
+        let input = fixtures::input_untyped_valid_simple();
+        let analysis = fixtures::analyze_spec(input).await;
+        let spec = analysis.spec.expect("Expected a valid specification");
+
+        let vars = get_all_declared_symbols(&spec);
+
+        println!("Declared symbols: {:#?}", vars);
+
+        assert!(
+            vars.len() == 3,
+            "Expected 3 declared symbols, found {}",
+            vars.len()
+        );
+
+        let result = vec![
+            Variables {
+                label: "x".to_string(),
+                kind: CompletionItemKind::VARIABLE,
+                trigger_context: &["expr", "input_stream", "variable"],
+                type_anno: None,
+                detail: "Input Stream".to_string(),
+            },
+            Variables {
+                label: "y".to_string(),
+                kind: CompletionItemKind::VARIABLE,
+                trigger_context: &["expr", "input_stream", "variable"],
+                type_anno: None,
+                detail: "Input Stream".to_string(),
+            },
+            Variables {
+                label: "z".to_string(),
+                kind: CompletionItemKind::VARIABLE,
+                trigger_context: &["expr", "output_stream", "variable"],
+                type_anno: None,
+                detail: "Output Stream".to_string(),
+            },
+        ];
+
+        assert_eq!(
+            vars, result,
+            "Declared symbols do not match expected result"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_get_all_declared_symbols_complex() {
+        let input = fixtures::input_untyped_complex_with_comments();
+        let analysis = fixtures::analyze_spec(input).await;
+        let spec = analysis.spec.expect("Expected a valid specification");
+
+        let vars = get_all_declared_symbols(&spec);
+
+        println!("Declared symbols in complex spec: {:#?}", vars);
+
+        assert!(
+            vars.len() == 11,
+            "Expected 11 declared symbols, found {}",
+            vars.len()
+        )
+    }
+    // Realised I never made it able to handle typed variables in the backend.
+    // #[apply(async_test)]
+    // async fn test_get_all_declared_symbols_typed() {
+    //     let input = fixtures::input_typed_valid_simple();
+    //     let analysis = fixtures::analyze_spec(input).await;
+    //     let spec = analysis.typed.expect("Expected a valid specification");
+    //     let vars = get_all_declared_symbols(&spec);
+    //     println!("Declared symbols: {:#?}", vars);
+    // }
+
+    #[test]
+    fn test_create_item() {
+        let dsrv = DsrvBuiltIn {
+            label: "in",
+            kind: CompletionItemKind::KEYWORD,
+            trigger_context: &["toplevel"],
+            insert_text: "in $1",
+            insert_text_format: InsertTextFormat::SNIPPET,
+            detail: "in <label> [: <Type>]",
+            documentation: "Declares an input stream that provides a sequence of event values to the monitor. The label acts as a variable name in the input namespace in(ϕ)",
+        };
+
+        let item = create_item(&dsrv);
+
+        println!("Created completion item: {:#?}", item);
+
+        assert!(
+            item.label == "in",
+            "Expected label to be `out`, found `{}`",
+            item.label
+        );
+
+        assert!(
+            item.kind == Some(CompletionItemKind::KEYWORD),
+            "Expected kind to be `FUNCTION`, found `{:?}`",
+            item.kind
+        );
+    }
+
+    #[test]
+    fn test_create_hover_item() {
+        let dsrv = DsrvBuiltIn {
+            label: "in",
+            kind: CompletionItemKind::KEYWORD,
+            trigger_context: &["toplevel"],
+            insert_text: "in $1",
+            insert_text_format: InsertTextFormat::SNIPPET,
+            detail: "in <label> [: <Type>]",
+            documentation: "Declares an input stream that provides a sequence of event values to the monitor. The label acts as a variable name in the input namespace in(ϕ)",
+        };
+
+        let rope = Rope::from_str(fixtures::input_untyped_valid_simple());
+
+        let item = create_hover_item(&dsrv, &Span { start: 1, end: 2 }, &rope);
+
+        println!("Created hover item: {:#?}", item);
+
+        assert!(
+            item.contents
+                == hover_doc!(format!(
+                    "```dsrv\n{}\n```\n---\n{}",
+                    dsrv.detail,
+                    dsrv.documentation.trim()
+                )),
+            "Hover contents do not match expected value"
+        );
+
+        assert!(
+            item.range.unwrap().start
+                == Position {
+                    line: 0,
+                    character: 1
+                },
+            "Hover range start does not match expected value"
+        );
+        assert!(
+            item.range.unwrap().end
+                == Position {
+                    line: 0,
+                    character: 2
+                },
+            "Hover range end does not match expected value"
+        );
+    }
+
+    #[test]
+    fn test_create_variable() {
+        let rope = Rope::from_str(fixtures::input_untyped_valid_simple());
+        let var = format!(
+            "```dsrv\n{} {}{}\n```\n---\n{}",
+            "in",
+            "x",
+            "",
+            get_builtin_by_label("in").unwrap().documentation
+        );
+
+        let item = create_hover_variable(&var, &Span { start: 1, end: 4 }, &rope);
+
+        println!("Created variable hover item: {:#?}", item);
+
+        assert!(
+            item.contents == hover_doc!(var),
+            "Variable hover contents do not match expected value"
+        );
+
+        assert!(
+            item.range.unwrap().start
+                == Position {
+                    line: 0,
+                    character: 1
+                },
+            "Variable hover range start does not match expected value"
+        );
+
+        assert!(
+            item.range.unwrap().end
+                == Position {
+                    line: 0,
+                    character: 4
+                },
+            "Variable hover range end does not match expected value"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_backend_change_untyped() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let uri = fixtures::create_URI_path();
+        let text = fixtures::input_untyped_valid_simple();
+
+        backend.change(uri.clone(), text).await;
+
+        println!("Backend: {:?}", backend);
+
+        assert!(
+            backend.document_map.contains_key(&uri),
+            "Document map does not contain the URI after change"
+        );
+
+        assert!(
+            backend.analysis_map.contains_key(&uri),
+            "Analysis map does not contain the URI after change"
+        );
+
+        assert!(
+            backend.token_map.contains_key(&uri),
+            "Token map does not contain the URI after change"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_change_complex() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let uri = fixtures::create_URI_path();
+        let text = fixtures::input_untyped_complex_with_comments();
+
+        backend.change(uri.clone(), text).await;
+
+        println!("Backend after complex change: {:?}", backend);
+
+        assert!(
+            backend.document_map.contains_key(&uri),
+            "Document map does not contain the URI after complex change"
+        );
+
+        assert!(
+            backend.analysis_map.contains_key(&uri),
+            "Analysis map does not contain the URI after complex change"
+        );
+
+        assert!(
+            backend.token_map.contains_key(&uri),
+            "Token map does not contain the URI after complex change"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_change_typed() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let uri = fixtures::create_URI_path();
+        let text = fixtures::input_typed_valid_complex();
+
+        backend.change(uri.clone(), text).await;
+
+        println!("Backend after typed change: {:?}", backend);
+
+        assert!(
+            backend.document_map.contains_key(&uri),
+            "Document map does not contain the URI after typed change"
+        );
+        assert!(
+            backend.analysis_map.contains_key(&uri),
+            "Analysis map does not contain the URI after typed change"
+        );
+        assert!(
+            backend.token_map.contains_key(&uri),
+            "Token map does not contain the URI after typed change"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_backend_new() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        println!("Backend: {:?}", backend);
+
+        assert!(
+            backend.document_map.is_empty(),
+            "Document map should be empty on new backend"
+        );
+        assert!(
+            backend.analysis_map.is_empty(),
+            "Analysis map should be empty on new backend"
+        );
+        assert!(
+            backend.token_map.is_empty(),
+            "Token map should be empty on new backend"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_get_completion() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+
+        // Test completion with  valid text
+        let text = fixtures::input_untyped_valid_simple();
+
+        backend.change(uri.clone(), text).await;
+        // println!("Backend: {:?}", backend.token_map);
+
+        let params = CompletionParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position {
+                    line: 4,
+                    character: 10,
+                },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        };
+
+        let completion = backend.get_completion(params).unwrap();
+        assert!(!completion.is_empty(), "Expected completions");
+    }
+
+    #[apply(async_test)]
+    async fn test_provide_hover() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let uri = fixtures::create_URI_path();
+        let text = fixtures::input_untyped_valid_simple(); // "in x\nin y\nout z\nz = x + y"
+
+        backend.change(uri.clone(), text).await;
+
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position {
+                    line: 0,
+                    character: 3,
+                }, // 'x'
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let hover = backend.provide_hover(params);
+
+        println!("Hover result: {:#?}", hover);
+
+        assert!(
+            hover.is_some(),
+            "Expected hover information for variable 'x'"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_hover_typed() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let uri = fixtures::create_URI_path();
+        let text = fixtures::input_typed_valid_simple();
+
+        backend.change(uri.clone(), text).await;
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position {
+                    line: 3,
+                    character: 6,
+                }, // 'x'
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let hover = backend.provide_hover(params);
+        println!("Hover result for typed variable: {:#?}", hover);
+
+        assert!(
+            hover.is_some(),
+            "Expected hover information for typed variable 'x'"
+        );
+
+        assert!(
+            hover.unwrap().contents
+                == hover_doc!(format!(
+                    "```dsrv\nin x: Int\n```\n---\nDeclares an input stream that provides a sequence of event values to the monitor. The label acts as a variable name in the input namespace in(ϕ)"
+                )),
+            "Hover contents do not match expected value for typed variable 'x'"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_hover_empty() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        let uri = fixtures::create_URI_path();
+        let text = fixtures::input_empty();
+
+        backend.change(uri.clone(), text).await;
+
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let hover = backend.provide_hover(params);
+
+        println!("Hover result for empty document: {:#?}", hover);
+
+        assert!(
+            hover.is_none(),
+            "Expected no hover information for empty document"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_get_completion_empty() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+
+        // Test completion with empty text
+        let text = fixtures::input_empty();
+
+        backend.change(uri.clone(), text).await;
+
+        let params = CompletionParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position {
+                    line: 0,
+                    character: 0,
+                },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        };
+
+        let completion = backend.get_completion(params).unwrap();
+
+        println!("Completion result for empty document: {:#?}", completion);
+
+        assert!(
+            !completion.is_empty(),
+            "Expected completions for empty document"
+        );
+
+        assert!(
+            completion.len() == 3,
+            "Expected 3 completions (in, out, aux) for empty document, found {}",
+            completion.len()
+        );
+        assert!(
+            completion[0].label == "in".to_string(),
+            "Expected first completion to be `in`, found `{}`",
+            completion[0].label
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_logger() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+
+        // Test logging an info message
+        backend
+            .logger("This is an info message".to_string(), MessageType::INFO)
+            .await;
+
+        // Test logging a warning message
+        backend
+            .logger(
+                "This is a warning message".to_string(),
+                MessageType::WARNING,
+            )
+            .await;
+
+        // Test logging an error message
+        backend
+            .logger("This is an error message".to_string(), MessageType::ERROR)
+            .await;
+
+        // Can't really assert anything here, but at least we can check that the function runs without panicking and logs the messages to the client.
+        assert!(true, "Logger function executed without panicking")
+    }
+
+    #[apply(async_test)]
+    async fn test_get_builtin() {
+        let builtin = get_builtin_by_label("in");
+        assert!(
+            builtin.is_some(),
+            "Expected to find built-in function with label `in`"
+        );
+        let builtin = builtin.unwrap();
+        assert!(
+            builtin.label == "in",
+            "Expected built-in label to be `in`, found `{}`",
+            builtin.label
+        );
+        assert!(
+            builtin.documentation.contains("Declares an input stream"),
+            "Expected documentation to contain 'Declares an input stream', found `{}`",
+            builtin.documentation
+        );
     }
 }

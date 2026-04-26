@@ -172,10 +172,7 @@ mod test {
         let params = CompletionParams {
             text_document_position: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
-                    uri: Uri::from_file_path(
-                        "/home/emili/projects/dsrv-vscode/assets/test/test.dsrv",
-                    )
-                    .unwrap(),
+                    uri: fixtures::create_URI_path(),
                 },
                 position: Position {
                     line: 0,
@@ -202,10 +199,7 @@ mod test {
         let params = HoverParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier {
-                    uri: Uri::from_file_path(
-                        "/home/emili/projects/dsrv-vscode/assets/test/test.dsrv",
-                    )
-                    .unwrap(),
+                    uri: fixtures::create_URI_path(),
                 },
                 position: Position {
                     line: 0,
