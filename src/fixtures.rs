@@ -64,16 +64,25 @@ pub fn input_semantic_undeclared_var() -> &'static str {
 }
 
 #[allow(dead_code)]
-pub fn input_semantic_type_error() -> &'static str  {
-  "in x: Int\n in y: Str\nout z: Int\nz = x + y"
+pub fn input_semantic_type_error() -> &'static str {
+    "in x: Int\n in y: Str\nout z: Int\nz = x + y"
 }
 
+#[allow(dead_code, non_snake_case)]
+pub fn input_parseError_invalid_token() -> &'static str {
+    "in x\nin y\nout z\n\n z = x \\ y"
+}
 
+#[allow(dead_code, non_snake_case)]
+pub fn input_parseError_unrecognizedEOF() -> &'static str {
+    "in x\nin y\nout z\n\n z = x  y"
+}
+#[allow(dead_code, non_snake_case)]
+pub fn input_parseError_unrecognized_token() -> &'static str {
+    "in x\nin y\nout z\n\n z = x + + y"
+}
 
-
-
-
-
+#[allow(dead_code)]
 pub fn input_empty() -> &'static str {
     ""
 }

@@ -119,7 +119,7 @@ impl Analysis {
                     ParseError::InvalidToken { location } => {
                         let range =
                             Range::new(location.unwrap_or_default(), location.unwrap_or_default());
-                        Self::create_diag("Invalid Token", range)
+                        Self::create_diag("Syntax error: Invalid Token", range)
                     }
                     ParseError::UnrecognizedEof {
                         location,
@@ -141,6 +141,7 @@ impl Analysis {
                         )
                     }
                     ParseError::ExtraToken { token } => {
+                        // Not currently used by the parser.
                         let (start, _tok, end) = token;
 
                         Self::create_diag(
@@ -150,6 +151,7 @@ impl Analysis {
                     }
 
                     ParseError::User { error } => {
+                        // Not currently used by the parser.
                         let p = Position::new(1, 1);
                         Self::create_diag(&format!("User error: {:?}", error), Range::new(p, p))
                     }
@@ -286,17 +288,93 @@ mod test {
             !analysis.diags.is_empty(),
             "Expected diagnostics for invalid syntax, but got none"
         );
-        assert_eq!(
-            analysis.diags.first().unwrap().message,
-            "Syntax error: Unexpected EOF",
-            "Expected diagnostic message for unexpected EOF, but got: {:?}",
-            analysis.diags.first().unwrap().message
-        );
         assert!(
             analysis.spec.is_none(),
             "Expected spec to be None for invalid syntax, but got: {:?}",
             analysis.spec
         )
+    }
+
+    #[apply(async_test)]
+    async fn test_analyze_syntax_error_invalid_token() {
+        let input = fixtures::input_parseError_invalid_token();
+        let analysis = fixtures::analyze_spec(input).await;
+
+        let result = &Diagnostic {
+            range: Range::new(Position::new(4, 7), Position::new(4, 7)),
+            severity: Some(DiagnosticSeverity::ERROR),
+            source: Some("DSRV".to_string()),
+            message: "Syntax error: Invalid Token".to_string(),
+            ..Default::default()
+        };
+
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            !analysis.diags.is_empty(),
+            "Expected diagnostics for invalid token, but got none"
+        );
+        assert_eq!(
+            analysis.diags.first().unwrap(),
+            result,
+            "Expected diagnostic for invalid token to match result, but got: {:#?}",
+            analysis.diags.first()
+        );
+    }
+
+    #[allow(non_snake_case)]
+    #[apply(async_test)]
+    async fn test_analyze_syntax_error_unrecognizedEOF() {
+        let input = fixtures::input_parseError_unrecognizedEOF();
+        let analysis = fixtures::analyze_spec(input).await;
+
+        let result = &Diagnostic {
+            range: Range::new(Position::new(4, 9), Position::new(4, 9)),
+            severity: Some(DiagnosticSeverity::ERROR),
+            source: Some("DSRV".to_string()),
+            message: "Syntax error: Unexpected EOF".to_string(),
+            ..Default::default()
+        };
+
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            !analysis.diags.is_empty(),
+            "Expected diagnostics for invalid token, but got none"
+        );
+        assert_eq!(
+            analysis.diags.first().unwrap(),
+            result,
+            "Expected diagnostic for invalid token to match result, but got: {:#?}",
+            analysis.diags.first()
+        );
+    }
+
+    #[apply(async_test)]
+    async fn test_analyze_syntax_error_unrecognized_token() {
+        let input = fixtures::input_parseError_unrecognized_token();
+        let analysis = fixtures::analyze_spec(input).await;
+
+        let result = &Diagnostic {
+            range: Range::new(Position::new(4, 9), Position::new(4, 10)),
+            severity: Some(DiagnosticSeverity::ERROR),
+            source: Some("DSRV".to_string()),
+            message: "Syntax error: Unrecognized token".to_string(),
+            ..Default::default()
+        };
+
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            !analysis.diags.is_empty(),
+            "Expected diagnostics for invalid token, but got none"
+        );
+        assert_eq!(
+            analysis.diags.first().unwrap(),
+            result,
+            "Expected diagnostic for invalid token to match result, but got: {:#?}",
+            analysis.diags.first()
+        );
     }
 
     #[apply(async_test)]

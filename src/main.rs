@@ -9,34 +9,35 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use tower_lsp_server::{LspService, Server};
 use dsrv_lsp::server::Backend;
-
+use tower_lsp_server::{LspService, Server};
 
 #[tokio::main]
 async fn main() {
-  tracing_subscriber::fmt()
-      .with_writer(std::io::stderr)
-      .with_max_level(tracing::Level::INFO)
-      .with_ansi(false)
-      .init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_max_level(tracing::Level::INFO)
+        .with_ansi(false)
+        .init();
 
-  
-  let stdin = tokio::io::stdin();
-  let stdout = tokio::io::stdout();
-  
-  let (service, socket) = LspService::build(|client| {Backend::new(client)}).finish();
-  Server::new(stdin, stdout, socket).serve(service).await;
+    let stdin = tokio::io::stdin();
+    let stdout = tokio::io::stdout();
+
+    let (service, socket) = LspService::build(|client| Backend::new(client)).finish();
+    Server::new(stdin, stdout, socket).serve(service).await;
 }
 
+#[cfg(test)]
+mod test {
+    use macro_rules_attribute::apply;
+    use trustworthiness_checker::async_test;
 
-// #[cfg(test)]
-// mod test {
-//   use macro_rules_attribute::apply;
-//   use trustworthiness_checker::async_test;
-  
-//   use super::*;
-  
-  
-  
-// }
+    use super::*;
+
+    #[apply(async_test)]
+    async fn test_lsp_service_build() {
+        // Test that the LSP service builds successfully without panicking
+        let (_service, _socket) = LspService::build(|client| Backend::new(client)).finish();
+        assert!(true, "LSP Service built successfully");
+    }
+}

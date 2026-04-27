@@ -13,7 +13,6 @@
 pub mod server;
 pub mod lang;
 pub mod utils;
-pub mod macros;
 pub mod fixtures;
 
 
