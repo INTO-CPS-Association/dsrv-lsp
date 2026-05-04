@@ -35,7 +35,7 @@ pub fn create_LSP_service() -> LspService<Backend> {
 
 #[allow(dead_code, non_snake_case)]
 pub fn create_URI_path() -> ls_types::Uri {
-    ls_types::Uri::from_file_path("/home/emili/projects/dsrv-vscode/assets/test/test.dsrv").unwrap()
+    ls_types::Uri::from_file_path("/dsrv-vscode/assets/test/test.dsrv").unwrap()
 }
 
 #[allow(dead_code)]
