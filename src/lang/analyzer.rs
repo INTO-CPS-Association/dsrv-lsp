@@ -296,6 +296,48 @@ mod test {
     }
 
     #[apply(async_test)]
+    async fn test_analyze_unformatted_input() {
+        let input = fixtures::input_untyped_long_valid_unformatted();
+        let analysis = fixtures::analyze_spec(input).await;
+
+        println!("Analysis result: {:#?}", analysis);
+
+        assert!(
+            analysis.diags.is_empty(),
+            "Expected no diagnostics for valid unformatted input, but got: {:?}",
+            analysis.diags
+        );
+
+        assert!(
+            analysis.spec.is_some(),
+            "Expected spec to be Some for valid unformatted input, but got: {:?}",
+            analysis.spec
+        );
+    }
+
+    // "Stress test" testing a very long input to see if the parser can handle it without crashing
+    #[apply(async_test)]
+    async fn test_very_long_input() {
+        let input = fixtures::input_long();
+        let analysis = fixtures::analyze_spec(input).await;
+        
+        // println!("Analysis result: {:#?}", analysis);
+        
+        assert!(
+            analysis.diags.is_empty(),
+            "Expected no diagnostics for valid long input, but got: {:?}",
+            analysis.diags
+        );
+        
+        assert!(
+            analysis.spec.is_some(),
+            "Expected spec to be Some for valid long input, but got: {:?}",
+            analysis.spec
+        );
+        
+    }
+
+    #[apply(async_test)]
     async fn test_analyze_syntax_error_invalid_token() {
         let input = fixtures::input_parseError_invalid_token();
         let analysis = fixtures::analyze_spec(input).await;
