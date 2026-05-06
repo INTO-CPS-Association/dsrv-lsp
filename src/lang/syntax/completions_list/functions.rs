@@ -132,23 +132,24 @@ pub static FUNCTIONS: &[DsrvBuiltIn] = &[
     },
 ];
 
-pub static DIST_FUNCTIONS: &[DsrvBuiltIn] = &[
-    DsrvBuiltIn {
-        label: "Monitored_at",
-        kind: CompletionItemKind::FUNCTION,
-        trigger_context: &["expr"],
-        insert_text: "Monitored_at($1, $2)",
-        insert_text_format: InsertTextFormat::SNIPPET,
-        detail: "Monitored_at(v, n)",
-        documentation: "Returns a boolean stream that continuously evaluates to `true` if the variable `v` is currently being monitored by the computational node `n` in the distributed graph, and `false` otherwise.",
-    },
-    DsrvBuiltIn {
-        label: "dist",
-        kind: CompletionItemKind::FUNCTION,
-        trigger_context: &["expr"],
-        insert_text: "Dist($1, $2)",
-        insert_text_format: InsertTextFormat::SNIPPET,
-        detail: "Dist(u, v)",
-        documentation: "Returns an integer stream representing the shortest topological distance between two entities (`u` and `v`) in the dynamically evolving distributed network graph. Both `u` and `v` can be either a variable name or a node name.",
-    },
-];
+// Not Used with the lalrpop parser and is not really suportted anyway
+// pub static DIST_FUNCTIONS: &[DsrvBuiltIn] = &[
+//     DsrvBuiltIn {
+//         label: "Monitored_at",
+//         kind: CompletionItemKind::FUNCTION,
+//         trigger_context: &["expr"],
+//         insert_text: "Monitored_at($1, $2)",
+//         insert_text_format: InsertTextFormat::SNIPPET,
+//         detail: "Monitored_at(v, n)",
+//         documentation: "Returns a boolean stream that continuously evaluates to `true` if the variable `v` is currently being monitored by the computational node `n` in the distributed graph, and `false` otherwise.",
+//     },
+//     DsrvBuiltIn {
+//         label: "dist",
+//         kind: CompletionItemKind::FUNCTION,
+//         trigger_context: &["expr"],
+//         insert_text: "Dist($1, $2)",
+//         insert_text_format: InsertTextFormat::SNIPPET,
+//         detail: "Dist(u, v)",
+//         documentation: "Returns an integer stream representing the shortest topological distance between two entities (`u` and `v`) in the dynamically evolving distributed network graph. Both `u` and `v` can be either a variable name or a node name.",
+//     },
+// ];

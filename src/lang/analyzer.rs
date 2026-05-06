@@ -507,7 +507,7 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_create_semancic_diags_function() {
+    async fn test_create_semantic_diags_function() {
         let range = Range::new(Position::new(1, 1), Position::new(1, 5));
         let diag = Analysis::create_diag("Test error semantic message", range.clone());
 
