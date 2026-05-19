@@ -32,7 +32,7 @@ pub struct Analysis {
 
 impl Analysis {
     // Create Clone function for Analysis struct
-    pub async fn analyze_specification(text: &str) -> Analysis {
+    pub async fn analyse_specification(text: &str) -> Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
                 // log::info!("stmts: {:#?}", stmts);

@@ -9,7 +9,7 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use crate::lang::analyzer::Analysis;
+use crate::lang::analyser::Analysis;
 use trustworthiness_checker::{
     SExpr,
     lang::dsrv::{

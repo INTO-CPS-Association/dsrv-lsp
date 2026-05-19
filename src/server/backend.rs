@@ -9,7 +9,7 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use crate::lang::analyzer::*;
+use crate::lang::analyser::*;
 use crate::lang::syntax::completions_list::*;
 use crate::lang::syntax::lexer::*;
 use crate::utils::byte_to_pos;
@@ -66,7 +66,7 @@ impl Backend {
         self.document_map.insert(uri.clone(), Rope::from_str(text));
         self.token_map.insert(uri.clone(), tokenize(text));
 
-        let analysis = Analysis::analyze_specification(&text).await;
+        let analysis = Analysis::analyse_specification(&text).await;
         let diags = analysis.diags.clone(); // Clone diagnostics to avoid ownership issues when inserting analysis into the map later.
 
         // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document

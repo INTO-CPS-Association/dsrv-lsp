@@ -10,5 +10,5 @@
  */
 
 pub mod syntax;
-pub mod analyzer;
+pub mod analyser;
 pub mod pattern_matching;

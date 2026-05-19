@@ -10,7 +10,7 @@
 */
 use crate::{
     lang::{
-        analyzer::Analysis,
+        analyser::Analysis,
         syntax::lexer::{self, TokenData},
     },
     server::Backend,
@@ -18,7 +18,7 @@ use crate::{
 
 #[allow(dead_code)]
 pub async fn analyze_spec(input: &str) -> Analysis {
-    Analysis::analyze_specification(input).await
+    Analysis::analyse_specification(input).await
 }
 
 #[allow(dead_code)]
