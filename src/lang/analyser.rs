@@ -198,9 +198,9 @@ mod test {
     use trustworthiness_checker::async_test;
 
     #[apply(async_test)]
-    async fn test_analyze_syntax_valid_input_not_typed() {
+    async fn test_analyse_syntax_valid_input_not_typed() {
         let input = fixtures::input_untyped_valid_simple();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         assert!(
             analysis.diags.is_empty(),
@@ -216,9 +216,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_syntax_valid_input_typed() {
+    async fn test_analyse_syntax_valid_input_typed() {
         let input = fixtures::input_typed_valid_simple();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         // println!("Analysis result: {:#?}", analysis.clone());
 
@@ -242,9 +242,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_empty_input() {
+    async fn test_analyse_empty_input() {
         let input = fixtures::input_empty();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
         let spec = analysis.spec.as_ref().unwrap();
 
         // println!("{:#?}", analysis);
@@ -278,9 +278,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_syntax_invalid_input() {
+    async fn test_analyse_syntax_invalid_input() {
         let input = fixtures::input_untyped_invalid_simple();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
 
@@ -296,9 +296,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_unformatted_input() {
+    async fn test_analyse_unformatted_input() {
         let input = fixtures::input_untyped_long_valid_unformatted();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
 
@@ -319,7 +319,7 @@ mod test {
     #[apply(async_test)]
     async fn test_very_long_input() {
         let input = fixtures::input_long();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
         
         // println!("Analysis result: {:#?}", analysis);
         
@@ -338,9 +338,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_syntax_error_invalid_token() {
+    async fn test_analyse_syntax_error_invalid_token() {
         let input = fixtures::input_parseError_invalid_token();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         let result = &Diagnostic {
             range: Range::new(Position::new(4, 7), Position::new(4, 7)),
@@ -366,9 +366,9 @@ mod test {
 
     #[allow(non_snake_case)]
     #[apply(async_test)]
-    async fn test_analyze_syntax_error_unrecognizedEOF() {
+    async fn test_analyse_syntax_error_unrecognizedEOF() {
         let input = fixtures::input_parseError_unrecognizedEOF();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         let result = &Diagnostic {
             range: Range::new(Position::new(4, 9), Position::new(4, 9)),
@@ -393,9 +393,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_syntax_error_unrecognized_token() {
+    async fn test_analyse_syntax_error_unrecognized_token() {
         let input = fixtures::input_parseError_unrecognized_token();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         let result = &Diagnostic {
             range: Range::new(Position::new(4, 9), Position::new(4, 10)),
@@ -420,9 +420,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_type_error() {
+    async fn test_analyse_type_error() {
         let input = fixtures::input_typed_invalid_simple();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
         assert!(
@@ -438,9 +438,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_semantic_undeclared_variable() {
+    async fn test_analyse_semantic_undeclared_variable() {
         let input = fixtures::input_semantic_undeclared_var();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
 
@@ -457,9 +457,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_semantic_type_error() {
+    async fn test_analyse_semantic_type_error() {
         let input = fixtures::input_semantic_type_error();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
 
@@ -538,9 +538,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_untyped_with_comments() {
+    async fn test_analyse_untyped_with_comments() {
         let input = fixtures::input_untyped_simple_with_comments();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
 
@@ -558,9 +558,9 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_analyze_untyped_complex() {
+    async fn test_analyse_untyped_complex() {
         let input = fixtures::input_untyped_complex_with_comments();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
 
         println!("Analysis result: {:#?}", analysis);
 

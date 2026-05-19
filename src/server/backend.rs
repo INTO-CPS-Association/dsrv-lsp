@@ -331,7 +331,7 @@ mod test {
     #[apply(async_test)]
     async fn test_get_all_declared_symbols() {
         let input = fixtures::input_untyped_valid_simple();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
         let spec = analysis.spec.expect("Expected a valid specification");
 
         let vars = get_all_declared_symbols(&spec);
@@ -377,7 +377,7 @@ mod test {
     #[apply(async_test)]
     async fn test_get_all_declared_symbols_complex() {
         let input = fixtures::input_untyped_complex_with_comments();
-        let analysis = fixtures::analyze_spec(input).await;
+        let analysis = fixtures::analyse_spec(input).await;
         let spec = analysis.spec.expect("Expected a valid specification");
 
         let vars = get_all_declared_symbols(&spec);
@@ -406,7 +406,7 @@ mod test {
     // #[apply(async_test)]
     // async fn test_get_all_declared_symbols_typed() {
     //     let input = fixtures::input_typed_valid_simple();
-    //     let analysis = fixtures::analyze_spec(input).await;
+    //     let analysis = fixtures::analyse_spec(input).await;
     //     let spec = analysis.typed.expect("Expected a valid specification");
     //     let vars = get_all_declared_symbols(&spec);
     //     println!("Declared symbols: {:#?}", vars);

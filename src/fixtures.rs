@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[allow(dead_code)]
-pub async fn analyze_spec(input: &str) -> Analysis {
+pub async fn analyse_spec(input: &str) -> Analysis {
     Analysis::analyse_specification(input).await
 }
 
