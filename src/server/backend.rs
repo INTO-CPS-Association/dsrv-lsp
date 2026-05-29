@@ -140,7 +140,7 @@ impl Backend {
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
 
         let node = Analysis::node_at_offset(&analysis, pos_offset)?;
-        log::info!("Node at offset {}: {:?}", pos_offset, node);
+        // log::info!("Node at offset {}: {:?}", pos_offset, node);
 
         // Match the node at the current offset with the corresponding built-in function to provide hover information. If the node is not a built-in function, return None to indicate that no hover information is available for that symbol.
         //TODO:This will give wrong hover info if the user is hovering over an area that has changed but was never syntactically correct, So the old AST is still present and provides hover information that does not match the current code. Could be solved by comparing with the lexed token map and use that as backup if the AST node does not match the token to still return something
