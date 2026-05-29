@@ -79,12 +79,32 @@ pub static TYPES: &[DsrvBuiltIn] = &[
         documentation: "String type representing sequences of characters, used for textual data.",
     },
     DsrvBuiltIn {
-    label: "Unit",
-    kind: CompletionItemKind::KEYWORD,
-    trigger_context: &["type"],
-    insert_text: "Unit",
+        label: "Unit",
+        kind: CompletionItemKind::KEYWORD,
+        trigger_context: &["type"],
+        insert_text: "Unit",
+        insert_text_format: InsertTextFormat::PLAIN_TEXT,
+        detail: "Unit",
+        documentation: "Unit type representing a pure event or trigger stream. It carries no data payload and is used purely to signal that an event occurred at a specific timestep.",
+    },
+    
+    DsrvBuiltIn {
+    label: "false",
+    kind: CompletionItemKind::CONSTANT,
+    trigger_context: &["expr"],
+    insert_text: "false",
     insert_text_format: InsertTextFormat::PLAIN_TEXT,
-    detail: "Unit",
-    documentation: "Unit type representing a pure event or trigger stream. It carries no data payload and is used purely to signal that an event occurred at a specific timestep.",
+    detail: "False",
+    documentation: "The boolean constant `false`, representing the logical value of falsehood.",
+    },
+    
+    DsrvBuiltIn {
+        label: "true",
+        kind: CompletionItemKind::CONSTANT,
+        trigger_context: &["expr"],
+        insert_text: "true",
+        insert_text_format: InsertTextFormat::PLAIN_TEXT,
+        detail: "True",
+        documentation: "The boolean constant `true`, representing the logical value of truth.",
     },
 ];

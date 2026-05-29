@@ -144,11 +144,25 @@ impl Backend {
 
         // Match the node at the current offset with the corresponding built-in function to provide hover information. If the node is not a built-in function, return None to indicate that no hover information is available for that symbol.
         //TODO:This will give wrong hover info if the user is hovering over an area that has changed but was never syntactically correct, So the old AST is still present and provides hover information that does not match the current code. Could be solved by comparing with the lexed token map and use that as backup if the AST node does not match the token to still return something
+        // log::info!("node {:?}", node.builtin_label());
+
         if let Some(label) = node.builtin_label() {
+            // Show hover information for true and false literals.
+            if label == "Val" {
+                if node.to_string().contains("false") {
+                    let b = get_builtin_by_label("false")?;
+                    return Some(create_hover_item(b, &node.span, &rope));
+                } else if node.to_string().contains("true") {
+                    let b = get_builtin_by_label("true")?;
+                    return Some(create_hover_item(b, &node.span, &rope));
+                }
+            }
+            // For other built-in functions, directly get the hover information based on the label.
             let builtin = get_builtin_by_label(label)?;
             return Some(create_hover_item(builtin, &node.span, &rope));
         }
 
+        // If the node is not a built-in function, check if it is a variable and provide hover information based on the variable type and whether it is an input, output or aux variable.
         match node.node {
             SExpr::Var(ref var_name) => {
                 let spec = analysis.spec.clone()?;
@@ -314,6 +328,7 @@ impl SExprHoverExt for SExpr {
             SExpr::Tan(..) => Some("tan"),
             SExpr::Abs(..) => Some("abs"),
             SExpr::Not(..) => Some("Not"),
+            SExpr::Val(..) => Some("Val"),
             _ => None,
         }
     }
