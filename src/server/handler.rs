@@ -72,7 +72,9 @@ impl LanguageServer for Backend {
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
-        self.change(uri, &params.content_changes[0].text).await;
+        if let Some(change) = params.content_changes.first() {
+            self.change(uri, &change.text).await;
+        }
     }
 
     async fn did_save(&self, _params: DidSaveTextDocumentParams) {
@@ -85,14 +87,24 @@ impl LanguageServer for Backend {
 
     //Done: Added the trigger character "." to provide suggestions for fields and methods when the user types a dot after an expression, added all the built in functions and variables to the completion list, and added the ability to provide suggestions based on the current scope and context of the code being edited.
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let completion = self.get_completion(params);
+        let completion =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.get_completion(params)))
+                .unwrap_or_else(|panic_payload| {
+                    eprintln!("[dsrv-lsp] completion panicked: {:?}", panic_payload);
+                    None
+                });
         Ok(completion.map(CompletionResponse::Array))
     }
 
     // Used the backend to create the hover items for the token at the position of the hover and return it to the client to be displayed in the editor.
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         //Give token based on the position of the hover and return hover information based on the token type (input, output, aux, expr)
-        let hover = self.provide_hover(params);
+        let hover =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.provide_hover(params)))
+                .unwrap_or_else(|panic_payload| {
+                    eprintln!("[dsrv-lsp] hover panicked: {:?}", panic_payload);
+                    None
+                });
         Ok(hover)
     }
 }
@@ -130,7 +142,7 @@ mod test {
 
         // Check the server capabilities to ensure that the the implemented capabilities are correctly advertised and that the unimplemented capabilities are not advertised, this is important to ensure that the client can correctly interact with the server and that the server can provide the expected functionality to the client.
         let server_cap = result.capabilities;
-        println!("Server Capabilities: {:#?}", server_cap);
+        eprintln!("Server Capabilities: {:#?}", server_cap);
         assert!(
             server_cap.hover_provider.is_some(),
             "Expected hover provider to be supported"
@@ -185,7 +197,7 @@ mod test {
         };
 
         let result = backend.completion(params).await.unwrap();
-        println!("Completion Result: {:#?}", result);
+        eprintln!("Completion Result: {:#?}", result);
 
         //Test that the completion result gives a response, but as there is no actual code in the test file, it should not give any completion items, so the result should be None
         assert!(result.is_none())
@@ -211,7 +223,7 @@ mod test {
 
         let result = backend.hover(params).await.unwrap();
 
-        print!("Hover Result: {:#?}", result);
+        eprint!("Hover Result: {:#?}", result);
 
         // As there is no actual code in the test file, there should be no token at the position of the hover, so the result should be None
         assert!(result.is_none())

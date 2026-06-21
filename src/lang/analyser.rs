@@ -15,7 +15,7 @@ use ropey::Rope;
 // use tower_lsp::lsp_types::*;
 use tower_lsp_server::ls_types::*;
 use trustworthiness_checker::lang::dsrv::{
-    ast::{DsrvSpecification, SpannedExpr},
+    ast::{SpannedExpr, UntypedDsrvSpecification},
     lalr::TopDeclsParser,
     lalr_parser::create_dsrv_spec,
     span::Span,
@@ -24,15 +24,34 @@ use trustworthiness_checker::lang::dsrv::{
 
 #[derive(Clone, Debug)]
 pub struct Analysis {
-    pub spec: Option<DsrvSpecification>, // The parsed specification, if parsing was successful
-    pub typed: Option<TypedDsrvSpecification>, //For future use, when type checker is implemented
-    pub diags: Vec<Diagnostic>,          // Diagnostics from both syntax and semantic analysis
+    pub spec: Option<UntypedDsrvSpecification>, // The parsed specification, if parsing was successful
+    pub typed: Option<TypedDsrvSpecification>,  //For future use, when type checker is implemented
+    pub diags: Vec<Diagnostic>, // Diagnostics from both syntax and semantic analysis
     pub spanned_nodes: Vec<SpannedExpr>, // A vector of all expressions in the spec annotated with their spans
 }
 
 impl Analysis {
-    // Create Clone function for Analysis struct
+    /// Synchronous core of the analysis pipeline.
+    ///
+    /// Parse, extract spanned nodes, and run the type checker (if type
+    /// annotations are present). The type checker is wrapped in
+    /// `catch_unwind` so that unimplemented features (e.g. "typed MGet")
+    /// cannot crash the language server.
+    pub fn analyze_sync(text: &str) -> Analysis {
+        Self::analyse_specification_inner(text)
+    }
+
+    /// Async wrapper using the repository's current British spelling.
     pub async fn analyse_specification(text: &str) -> Analysis {
+        Self::analyse_specification_inner(text)
+    }
+
+    /// Async wrapper kept for compatibility with call sites using American spelling.
+    pub async fn analyze_specification(text: &str) -> Analysis {
+        Self::analyse_specification_inner(text)
+    }
+
+    fn analyse_specification_inner(text: &str) -> Analysis {
         match TopDeclsParser::new().parse(text) {
             Ok(stmts) => {
                 // log::info!("stmts: {:#?}", stmts);
@@ -48,8 +67,14 @@ impl Analysis {
                 // Create the DSRV specification from the parsed statements for type_checker and semantic errors
                 let spec = create_dsrv_spec(&stmts);
                 if !(spec.type_annotations.is_empty()) {
-                    match type_check(spec.clone()) {
-                        Ok(s) => {
+                    // Wrap type_check in catch_unwind to handle unimplemented features in the
+                    // type checker gracefully
+                    let type_check_result =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            type_check(spec.clone())
+                        }));
+                    match type_check_result {
+                        Ok(Ok(s)) => {
                             // log::info!("Type checked specification: {:?}", s);
                             return Analysis {
                                 spec: Some(spec.clone()),
@@ -58,39 +83,41 @@ impl Analysis {
                                 spanned_nodes: nodes.clone(),
                             };
                         }
-                        Err(errs) => {
+                        Ok(Err(errs)) => {
                             // log::error!("Type checking errors: {:#?}", errs);
 
                             let mut diags_vec: Vec<Diagnostic> = Vec::new();
 
                             for error in errs {
                                 let rope = Rope::from_str(text);
-                                match error {
-                                    SemanticError::DeferredError(msg, span) => {
-                                        // Not actually possible to get deferred errors with the current implementation of the type checker, but want to be able to handle them in the future when we have a more complete type checker that can produce deferred errors.
-                                        let msg_deferred = format!("Deferred error: {}", msg);
-                                        diags_vec.push(Self::create_semantic_diag(
-                                            &rope,
-                                            &msg_deferred,
-                                            span,
-                                        ));
+                                let span = error.span();
+                                let message = match error {
+                                    SemanticError::TypeError(error) => {
+                                        format!("Type error: {}", error.message())
                                     }
-                                    SemanticError::TypeError(msg, span) => {
-                                        let msg_typed = format!("Type error: {}", msg);
-                                        diags_vec.push(Self::create_semantic_diag(
-                                            &rope, &msg_typed, span,
-                                        ));
+                                    SemanticError::DeferredError(msg, _) => {
+                                        format!("Deferred error: {}", msg)
                                     }
-                                    SemanticError::UndeclaredVariable(msg, span) => {
-                                        let msg_undeclared =
-                                            format!("Undeclared variable: {}", msg);
-                                        diags_vec.push(Self::create_semantic_diag(
-                                            &rope,
-                                            &msg_undeclared,
-                                            span,
-                                        ));
+                                    SemanticError::UndeclaredVariable(msg, _) => {
+                                        format!("Undeclared variable: {}", msg)
                                     }
-                                }
+                                    SemanticError::MissingTypeAnnotation(msg, _) => {
+                                        format!("Missing type annotation: {}", msg)
+                                    }
+                                    SemanticError::MissingTypeAscription(msg, _) => {
+                                        format!("Missing type ascription: {}", msg)
+                                    }
+                                    SemanticError::UnsupportedLiteral(msg, _) => {
+                                        format!("Unsupported literal: {}", msg)
+                                    }
+                                    SemanticError::UnsupportedExpression(msg, _) => {
+                                        format!("Unsupported expression: {}", msg)
+                                    }
+                                    SemanticError::UnresolvedType(error) => {
+                                        format!("Unresolved type: {}", error.message())
+                                    }
+                                };
+                                diags_vec.push(Self::create_semantic_diag(&rope, &message, span));
                             }
                             return Analysis {
                                 spec: Some(spec.clone()),
@@ -98,6 +125,15 @@ impl Analysis {
                                 diags: diags_vec,
                                 spanned_nodes: nodes.clone(),
                             };
+                        }
+                        Err(_panic_payload) => {
+                            // The type checker panicked due to an unimplemented feature.
+                            // Log it to stderr and fall through as if there were no type
+                            // annotations, so the server stays alive and syntax-level
+                            // completion / hover still works.
+                            eprintln!(
+                                "[dsrv-lsp] type_check panicked (unimplemented feature?) – skipping type checking for this document"
+                            );
                         }
                     }
                 }
@@ -177,11 +213,13 @@ impl Analysis {
         }
     }
 
-    fn create_semantic_diag(rope: &Rope, msg: &str, span: Span) -> Diagnostic {
-        let range = Range {
-            start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
-            end: byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
-        };
+    fn create_semantic_diag(rope: &Rope, msg: &str, span: Option<Span>) -> Diagnostic {
+        let range = span
+            .map(|span| Range {
+                start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
+                end: byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
+            })
+            .unwrap_or_default();
 
         log::info!("msg: {:?}", &msg);
         // let msg_formatted = regex_format(&msg);
@@ -260,9 +298,9 @@ mod test {
             spec.output_vars
         );
         assert!(
-            spec.aux_info.is_empty(),
+            spec.aux_vars.is_empty(),
             "Expected no auxiliary variables, but got: {:?}",
-            spec.aux_info
+            spec.aux_vars
         );
         assert!(
             spec.type_annotations.is_empty(),
@@ -320,21 +358,19 @@ mod test {
     async fn test_very_long_input() {
         let input = fixtures::input_long();
         let analysis = fixtures::analyse_spec(input).await;
-        
         // println!("Analysis result: {:#?}", analysis);
-        
+
         assert!(
             analysis.diags.is_empty(),
             "Expected no diagnostics for valid long input, but got: {:?}",
             analysis.diags
         );
-        
+
         assert!(
             analysis.spec.is_some(),
             "Expected spec to be Some for valid long input, but got: {:?}",
             analysis.spec
         );
-        
     }
 
     #[apply(async_test)]

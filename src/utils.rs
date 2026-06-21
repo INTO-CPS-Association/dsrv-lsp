@@ -14,8 +14,12 @@ use tower_lsp_server::ls_types::Position;
 
 // Converts a byte index in the text to a Position (line and column) for LSP diagnostics.
 pub fn byte_to_pos(rope: &Rope, byte: usize) -> Option<Position> {
-    let line = rope.byte_to_line(byte);
-    let line_start = rope.line_to_byte(line);
+    if byte > rope.len_bytes() {
+        return None;
+    }
+
+    let line = rope.try_byte_to_line(byte).ok()?;
+    let line_start = rope.try_line_to_byte(line).ok()?;
 
     let col = byte - line_start;
     Some(Position::new(line as u32, col as u32))
@@ -26,8 +30,13 @@ pub fn pos_to_offset(pos: Position, rope: &Rope) -> Option<u32> {
     if pos.line as usize >= rope.len_lines() {
         return None;
     }
-    let line_byte_offset = rope.line_to_byte(pos.line as usize);
-    let offset = line_byte_offset + pos.character as usize;
+
+    let line_byte_offset = rope.try_line_to_byte(pos.line as usize).ok()?;
+    let offset = line_byte_offset.saturating_add(pos.character as usize);
+    if offset > rope.len_bytes() {
+        return None;
+    }
+
     Some(offset as u32)
 }
 

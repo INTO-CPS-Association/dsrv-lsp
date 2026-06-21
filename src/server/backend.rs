@@ -19,8 +19,10 @@ use ropey::Rope;
 // use tower_lsp::Client;
 // use tower_lsp::lsp_types::*;
 use tower_lsp_server::{Client, ls_types::*};
-use trustworthiness_checker::DsrvSpecification;
-use trustworthiness_checker::lang::dsrv::{ast::SExpr, span::Span};
+use trustworthiness_checker::lang::dsrv::{
+    ast::{SExpr, UntypedDsrvSpecification},
+    span::Span,
+};
 
 macro_rules! documentation {
     ($value:expr) => {
@@ -66,7 +68,34 @@ impl Backend {
         self.document_map.insert(uri.clone(), Rope::from_str(text));
         self.token_map.insert(uri.clone(), tokenize(text));
 
-        let analysis = Analysis::analyse_specification(&text).await;
+        // Run analysis on a dedicated blocking thread so the tokio runtime stays
+        // responsive to hover, completion and other LSP requests while the
+        // (potentially slow) parser and type-checker run. `analyze_sync` is a
+        // plain synchronous function so it can be called directly from the
+        // blocking thread pool without needing `block_on`.
+        //
+        // In test builds the runtime is not tokio-based, so we call the sync
+        // function directly (test inputs are small so the brief block is fine).
+        #[cfg(not(test))]
+        let analysis = {
+            let text_owned = text.to_string();
+            tokio::task::spawn_blocking(move || Analysis::analyze_sync(&text_owned))
+                .await
+                .unwrap_or_else(|join_err| {
+                    // spawn_blocking task panicked; catch_unwind inside analyze_sync
+                    // should normally prevent this, but guard here as a last resort.
+                    eprintln!("[dsrv-lsp] analysis task panicked: {:?}", join_err);
+                    Analysis {
+                        spec: None,
+                        typed: None,
+                        diags: vec![],
+                        spanned_nodes: vec![],
+                    }
+                })
+        };
+
+        #[cfg(test)]
+        let analysis = Analysis::analyze_sync(text);
         let diags = analysis.diags.clone(); // Clone diagnostics to avoid ownership issues when inserting analysis into the map later.
 
         // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document
@@ -177,7 +206,7 @@ impl Backend {
 
                 let (stream_kind, stream_text) = if spec.input_vars.contains(var_name) {
                     ("in", get_builtin_by_label("in")?.documentation)
-                } else if spec.aux_info.contains(var_name) {
+                } else if spec.aux_vars.contains(var_name) {
                     ("aux", get_builtin_by_label("aux")?.documentation)
                 } else if spec.output_vars.contains(var_name) {
                     ("out", get_builtin_by_label("out")?.documentation)
@@ -214,7 +243,7 @@ pub struct Variables {
 
 // TODO: Add support for typed variables to be able to provide type information in the completion items.
 // Convert specification items into completion items for autocompletion
-fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
+fn get_all_declared_symbols(spec: &UntypedDsrvSpecification) -> Vec<Variables> {
     let mut items = Vec::new();
 
     for name in &spec.input_vars {
@@ -227,7 +256,7 @@ fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
         };
         items.push(item);
     }
-    for name in &spec.aux_info {
+    for name in &spec.aux_vars {
         let item = Variables {
             label: name.into(),
             kind: CompletionItemKind::VARIABLE,
@@ -239,7 +268,7 @@ fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
     }
     for name in &spec.output_vars {
         // Check if the variable is already in, as aux vars is both parsed as output and aux variables, so they will be in both lists, but we only want to add them once with the aux variable information as that is more specific.
-        if !spec.aux_info.contains(name) {
+        if !spec.aux_vars.contains(name) {
             let item = Variables {
                 label: name.into(),
                 kind: CompletionItemKind::VARIABLE,
