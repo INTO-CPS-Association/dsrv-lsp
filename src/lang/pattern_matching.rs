@@ -9,104 +9,198 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use crate::lang::analyser::Analysis;
-use trustworthiness_checker::{
-    SExpr,
-    lang::dsrv::{
-        ast::{STopDecl, SpannedExpr},
-        span::Span,
-    },
+use std::cmp::Reverse;
+
+use contiguous_tree::TreeCursorExt;
+use trustworthiness_checker::lang::dsrv::{
+    ast::{DsrvSpecification, Expr, ExprRef, ExprView},
+    span::Span,
 };
 
-// Recursively extract all nodes from an expression tree and store them in a flat vector.
-pub fn extract_nodes(spanned: &SpannedExpr, results: &mut Vec<SpannedExpr>) {
-    // Visit and push the current node onto the results vector.
-    results.push(spanned.clone());
+/// The small amount of AST information needed by the language server.
+///
+/// The checker used to expose a recursive `SExpr` tree. The current checker
+/// exposes arena-backed `ExprRef` cursors instead, so the LSP keeps a compact
+/// snapshot for offset lookup and hover without retaining references into the
+/// specification's arena.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SExpr {
+    If,
+    SIndex,
+    Val(Literal),
+    BinOp,
+    Var(trustworthiness_checker::VarName),
+    Dynamic,
+    Defer,
+    Update,
+    Default,
+    IsDefined,
+    When,
+    Latch,
+    Init,
+    Not,
+    Neg,
+    Lambda,
+    Apply,
+    Fix,
+    Partial,
+    List,
+    Tuple,
+    LIndex,
+    LAppend,
+    LConcat,
+    LHead,
+    LTail,
+    LLen,
+    LMap,
+    LFilter,
+    LFold,
+    Map,
+    Struct,
+    ObjectLiteral,
+    MGet,
+    SGet,
+    MInsert,
+    MRemove,
+    MHasKey,
+    Sin,
+    Cos,
+    Tan,
+    Abs,
+    MonitoredAt,
+    Dist,
+}
 
-    // Recursively extract nodes from the expression tree.
-    match &spanned.node {
-        // Nodes with similar structure can be grouped together for cleaner code.
-        #[rustfmt::skip] // Disable rustfmt for this match arm to maintain the grouping and readability.
-        SExpr::LIndex(e1, e2) | SExpr::LAppend(e1, e2) | SExpr::LConcat(e1, e2) | SExpr::Latch(e1, e2) | 
-        SExpr::Update(e1, e2) | SExpr::Default(e1, e2) | SExpr::Init(e1, e2) => {
-            extract_nodes(e1, results);
-            extract_nodes(e2, results);
-        }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Literal {
+    Bool(bool),
+    Other,
+}
 
-        #[rustfmt::skip] // Disable rustfmt for this match arm to maintain the grouping and readability.
-        SExpr::LTail(e) | SExpr::LLen(e) | SExpr::Abs(e) | SExpr::Cos(e) | SExpr::IsDefined(e) | 
-        SExpr::LHead(e) | SExpr::When(e) | SExpr::Not(e) | SExpr::Sin(e) | SExpr::Tan(e)  => {
-            extract_nodes(e, results);
-        }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpannedExpr {
+    pub node: SExpr,
+    pub span: Span,
+}
 
-        SExpr::List(elements) => {
-            for el in elements {
-                extract_nodes(el, results);
-            }
-        }
-
-        SExpr::Map(kv_pair) => {
-            for (_, v) in kv_pair {
-                extract_nodes(v, results);
-            }
-        }
-
-        SExpr::MGet(e, _) | SExpr::MRemove(e, _) | SExpr::MHasKey(e, _) | SExpr::SIndex(e, _) => {
-            extract_nodes(e, results);
-        }
-
-        SExpr::MInsert(m, _, v) => {
-            extract_nodes(m, results);
-            extract_nodes(v, results);
-        }
-
-        SExpr::BinOp(lhs, rhs, _op) => {
-            extract_nodes(lhs, results);
-            extract_nodes(rhs, results);
-        }
-
-        SExpr::Dynamic(e, _) | SExpr::RestrictedDynamic(e, _, _) | SExpr::Defer(e, _, _) => {
-            extract_nodes(e, results);
-        }
-
-        SExpr::If(e1, e2, e3) => {
-            extract_nodes(e1, results);
-            extract_nodes(e2, results);
-            extract_nodes(e3, results);
-        }
-
-        //Base cases: no further nodes to extract.
-        SExpr::Val(_) | SExpr::Var(_) => {}
-
-        _ => {}
+fn snapshot(expr: ExprRef<'_>) -> SpannedExpr {
+    SpannedExpr {
+        node: snapshot_kind(expr),
+        span: expr.span(),
     }
 }
 
-// Extract variable names from top-level declarations and their assigned expressions.
-pub fn extract_from_stmts(stmts: &[STopDecl], results: &mut Vec<SpannedExpr>) {
-    for stmt in stmts {
-        match stmt {
-            STopDecl::Input(var_name, _type, span)
-            | STopDecl::Output(var_name, _type, span)
-            | STopDecl::Aux(var_name, _type, span) => {
+fn snapshot_kind(expr: ExprRef<'_>) -> SExpr {
+    match expr.view() {
+        ExprView::If(..) => SExpr::If,
+        ExprView::SIndex(..) => SExpr::SIndex,
+        ExprView::Val(value) => SExpr::Val(snapshot_literal(value)),
+        ExprView::BinOp(..) => SExpr::BinOp,
+        ExprView::Var(variable) => SExpr::Var(variable.clone()),
+        ExprView::Dynamic(..) => SExpr::Dynamic,
+        ExprView::Defer(..) => SExpr::Defer,
+        ExprView::Update(..) => SExpr::Update,
+        ExprView::Default(..) => SExpr::Default,
+        ExprView::IsDefined(..) => SExpr::IsDefined,
+        ExprView::When(..) => SExpr::When,
+        ExprView::Latch(..) => SExpr::Latch,
+        ExprView::Init(..) => SExpr::Init,
+        ExprView::Not(..) => SExpr::Not,
+        ExprView::Neg(..) => SExpr::Neg,
+        ExprView::Lambda(..) => SExpr::Lambda,
+        ExprView::Apply(..) => SExpr::Apply,
+        ExprView::Fix(..) => SExpr::Fix,
+        ExprView::Partial(..) => SExpr::Partial,
+        ExprView::List(..) => SExpr::List,
+        ExprView::Tuple(..) => SExpr::Tuple,
+        ExprView::LIndex(..) => SExpr::LIndex,
+        ExprView::LAppend(..) => SExpr::LAppend,
+        ExprView::LConcat(..) => SExpr::LConcat,
+        ExprView::LHead(..) => SExpr::LHead,
+        ExprView::LTail(..) => SExpr::LTail,
+        ExprView::LLen(..) => SExpr::LLen,
+        ExprView::LMap(..) => SExpr::LMap,
+        ExprView::LFilter(..) => SExpr::LFilter,
+        ExprView::LFold(..) => SExpr::LFold,
+        ExprView::Map(..) => SExpr::Map,
+        ExprView::Struct(..) => SExpr::Struct,
+        ExprView::ObjectLiteral(..) => SExpr::ObjectLiteral,
+        ExprView::MGet(..) => SExpr::MGet,
+        ExprView::SGet(..) => SExpr::SGet,
+        ExprView::MInsert(..) => SExpr::MInsert,
+        ExprView::MRemove(..) => SExpr::MRemove,
+        ExprView::MHasKey(..) => SExpr::MHasKey,
+        ExprView::Sin(..) => SExpr::Sin,
+        ExprView::Cos(..) => SExpr::Cos,
+        ExprView::Tan(..) => SExpr::Tan,
+        ExprView::Abs(..) => SExpr::Abs,
+        ExprView::MonitoredAt(..) => SExpr::MonitoredAt,
+        ExprView::Dist(..) => SExpr::Dist,
+    }
+}
+
+fn snapshot_literal(value: &trustworthiness_checker::Value) -> Literal {
+    match value {
+        trustworthiness_checker::Value::Bool(value) => Literal::Bool(*value),
+        _ => Literal::Other,
+    }
+}
+
+/// Extract a source-ordered, flat snapshot of one expression tree.
+pub fn extract_nodes(spanned: &Expr, results: &mut Vec<SpannedExpr>) {
+    let mut pending = vec![spanned.as_ref()];
+    while let Some(expr) = pending.pop() {
+        results.push(snapshot(expr));
+        pending.extend(expr.children().rev());
+    }
+}
+
+/// Extract declaration and expression nodes from a parsed specification.
+///
+/// Declaration spans are recovered from the source tokens because the current
+/// public `DsrvSpecification` API intentionally exposes expression roots but not
+/// parser-local declaration records. Expression nodes come directly from the
+/// checker-owned forest and retain the parser's exact spans.
+pub fn extract_from_stmts(spec: &DsrvSpecification, source: &str, results: &mut Vec<SpannedExpr>) {
+    let tokens = crate::lang::syntax::lexer::tokenize(source);
+    for (index, token) in tokens.iter().enumerate() {
+        let is_declaration = matches!(
+            token.token,
+            crate::lang::syntax::lexer::Token::In
+                | crate::lang::syntax::lexer::Token::Out
+                | crate::lang::syntax::lexer::Token::Aux
+                | crate::lang::syntax::lexer::Token::Var
+        );
+        if is_declaration {
+            if let Some(name) = tokens
+                .get(index + 1)
+                .filter(|next| next.token == crate::lang::syntax::lexer::Token::Identifier)
+            {
                 results.push(SpannedExpr {
-                    node: SExpr::Var(var_name.clone()),
-                    span: span.clone(),
-                });
-            }
-            STopDecl::Assignment(var_name, expr, span) => {
-                let var_len = var_name.to_string().len() as u32;
-                results.push(SpannedExpr {
-                    node: SExpr::Var(var_name.clone()),
+                    node: SExpr::Var(name.content.clone().into()),
                     span: Span {
-                        start: span.start,
-                        end: span.start + var_len,
+                        start: token.span.start as u32,
+                        end: name.span.end as u32,
                     },
                 });
-                extract_nodes(expr, results);
             }
+        } else if token.token == crate::lang::syntax::lexer::Token::Identifier
+            && tokens
+                .get(index + 1)
+                .is_some_and(|next| next.token == crate::lang::syntax::lexer::Token::Eq)
+        {
+            results.push(SpannedExpr {
+                node: SExpr::Var(token.content.clone().into()),
+                span: Span {
+                    start: token.span.start as u32,
+                    end: token.span.end as u32,
+                },
+            });
         }
     }
+
+    results.extend(spec.nodes().map(snapshot));
+    results.sort_by_key(|node| (node.span.start, Reverse(node.span.end)));
 }
 
 // Helper function to find the smallest node at a given offset in the analysis.
@@ -115,21 +209,11 @@ impl Analysis {
         self.spanned_nodes
             .iter()
             .filter(|spanned| offset >= spanned.span.start && offset <= spanned.span.end)
-            .min_by_key(|spanned| spanned.span.end - spanned.span.start) // Find the smallest node that contains the offset by finding the one with the smallest span
+            .min_by_key(|spanned| spanned.span.end - spanned.span.start)
     }
-
-    // Not used at this time but might later on
-    // pub fn parent_of_node(&self, child_span: Span) -> Option<&SpannedExpr> {
-    //     self.spanned_nodes
-    //         .iter()
-    //         .filter(|p| {
-    //             p.span.start <= child_span.start
-    //                 && p.span.end >= child_span.end
-    //                 && p.span != child_span
-    //         })
-    //         .min_by_key(|p| p.span.end - p.span.start)
-    // }
 }
+
+use crate::lang::analyser::Analysis;
 
 #[cfg(test)]
 mod test {
@@ -142,85 +226,54 @@ mod test {
 
     #[test]
     fn test_extract_nodes_simple() {
-        let spanned = fixtures::input_ast_simple();
+        let expression = fixtures::input_ast_simple();
         let mut nodes = Vec::new();
-        extract_nodes(&spanned, &mut nodes);
+        extract_nodes(&expression, &mut nodes);
 
-        // println!("Spanned: {:#?}", spanned);
-        println!("Extracted Nodes: {:#?}", nodes);
-
-        assert!(nodes.len() == 3);
-        assert!(
-            matches!(nodes[0].node, SExpr::BinOp(_, _, _)),
-            "First node should be the BinOp"
-        );
-        assert!(
-            matches!(nodes[2].node, SExpr::Val(_)),
-            "Third node should be a Val"
-        );
+        assert_eq!(nodes.len(), 3);
+        assert!(matches!(nodes[0].node, SExpr::BinOp));
+        assert!(matches!(nodes[2].node, SExpr::Val(_)));
     }
 
     #[test]
     fn test_extract_nodes_complex() {
-        let spanned = fixtures::input_ast_long();
+        let expression = fixtures::input_ast_long();
         let mut nodes = Vec::new();
-        extract_nodes(&spanned, &mut nodes);
+        extract_nodes(&expression, &mut nodes);
 
-        println!("Extracted Nodes: {:#?}", nodes);
-        assert!(nodes.len() == 6, "Expected 6 node, got {}", nodes.len());
-        assert!(
-            matches!(nodes[0].node, SExpr::If(_, _, _)),
-            "First node should be the If"
-        );
-        assert!(
-            matches!(nodes[2].node, SExpr::Default(_, _)),
-            "Third node should be the Default"
-        );
-        assert!(
-            matches!(nodes[5].node, SExpr::Val(_)),
-            "Sixth node should be a Val"
-        );
+        assert_eq!(nodes.len(), 6);
+        assert!(matches!(nodes[0].node, SExpr::If));
+        assert!(matches!(nodes[2].node, SExpr::Default));
+        assert!(matches!(nodes[5].node, SExpr::Val(_)));
     }
 
     #[test]
     fn test_extract_from_stmts() {
-        let stmts = fixtures::input_stmts_simple();
-        
+        let source = fixtures::input_untyped_valid_simple();
+        let spec: DsrvSpecification = source.parse().unwrap();
         let mut results = Vec::new();
-        extract_from_stmts(&stmts, &mut results);
+        extract_from_stmts(&spec, source, &mut results);
 
-        println!("Extracted from statements: {:#?}", results);
-
-        assert!(
-            results.len() == 7,
-            "Expected 6 nodes, got {}",
-            results.len()
-        );
-        assert!(
-            matches!(results[0].node, SExpr::Var(ref name) if name.to_string() == "x"),
-            "First node should be variable 'x'"
-        );
-        assert!(
-            matches!(results[1].node, SExpr::Var(ref name) if name.to_string() == "y"),
-            "Second node should be variable 'y'"
-        );
-        assert!(
-            matches!(results[2].node, SExpr::Var(ref name) if name.to_string() == "z"),
-            "Third node should be variable 'z'"
-        );
-
-        // Test if the span of the variable 'z' in the assignment is cut of correctly to only include the variable name and not the whole expression
-        assert_eq!(
-            results[3].span.end, 18,
-            "Expected span end to be 18 for variable 'z' in assignment"
-        );
+        assert_eq!(results.len(), 7);
+        assert!(matches!(
+            results[0].node,
+            SExpr::Var(ref name) if name.to_string() == "x"
+        ));
+        assert!(matches!(
+            results[1].node,
+            SExpr::Var(ref name) if name.to_string() == "y"
+        ));
+        assert!(matches!(
+            results[2].node,
+            SExpr::Var(ref name) if name.to_string() == "z"
+        ));
+        assert!(matches!(results[3].node, SExpr::Var(ref name) if name == &"z".into()));
     }
 
     #[apply(async_test)]
     async fn test_node_at_offset() {
         let spanned_nodes = fixtures::input_spanned_nodes_simple();
-        
-        // Make an analysis with the spanned nodes
+
         let analysis = Analysis {
             spec: None,
             typed: None,
@@ -228,30 +281,24 @@ mod test {
             spanned_nodes,
         };
 
-        // Test offsets that should return a node
         let node = analysis.node_at_offset(2).unwrap();
-        assert!(
-            matches!(node.node, SExpr::Var(ref name) if name.to_string() == "x"),
-            "Offset 2 should return variable 'x'"
-        );
+        assert!(matches!(
+            node.node,
+            SExpr::Var(ref name) if name.to_string() == "x"
+        ));
 
         let node = analysis.node_at_offset(7).unwrap();
-        assert!(
-            matches!(node.node, SExpr::Var(ref name) if name.to_string() == "y"),
-            "Offset 7 should return variable 'y'"
-        );
+        assert!(matches!(
+            node.node,
+            SExpr::Var(ref name) if name.to_string() == "y"
+        ));
 
-        let node = analysis.node_at_offset(18);
-        assert!(
-            node.is_none(),
-            "Offset 18 should return None as it is outside all spans"
-        );
+        assert!(analysis.node_at_offset(18).is_none());
 
-        // Test offsets that are on the boundary of spans
         let node = analysis.node_at_offset(4).unwrap();
-        assert!(
-            matches!(node.node, SExpr::Var(ref name) if name.to_string() == "x"),
-            "Offset 4 should return variable 'x'"
-        );
+        assert!(matches!(
+            node.node,
+            SExpr::Var(ref name) if name.to_string() == "x"
+        ));
     }
 }

@@ -15,12 +15,13 @@ use logos::Logos;
 // use tower_lsp::lsp_types::{Diagnostic, Range};
 // use tower_lsp_server::ls_types::{Diagnostic, Range};
 
-
 #[derive(Logos, Debug, Clone, PartialEq, Copy, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
 pub enum Token {
     #[regex(r"//[^\n\r]*", allow_greedy = true)]
     LineComment,
+    #[regex(r"\(\*([^*]|\*+[^)*])*\*+\)", allow_greedy = true)]
+    BlockComment,
     // #[token("(*", lex_block_comment)]
     // BlockComment,
 
@@ -45,12 +46,22 @@ pub enum Token {
     Aux,
     #[token("var")]
     Var,
+    #[token("Tuple")]
+    Tuple,
+    #[token("Struct")]
+    Struct,
+    #[token("Any")]
+    Any,
 
     // Primitives
     #[token("dynamic")]
     Dynamic,
     #[token("defer")]
     Defer,
+    #[token("fix")]
+    Fix,
+    #[token("partial")]
+    Partial,
 
     // Built in function keyword
     #[token("eval")]
@@ -109,6 +120,12 @@ pub enum Token {
     Concat,
     #[token("=")]
     Eq,
+    #[token("->")]
+    Arrow,
+    #[token("...")]
+    Ellipsis,
+    #[token("\\")]
+    Backslash,
     #[token("+")]
     Plus,
     #[token("-")]
@@ -187,9 +204,7 @@ pub fn tokenize(text: &str) -> Vec<TokenData> {
         match token_result {
             Ok(t) => {
                 // Ignore whitespace and comments
-                if t != Token::Whitespace && t != Token::LineComment
-                /* && t != Token::BlockComment  */
-                {
+                if t != Token::Whitespace && t != Token::LineComment && t != Token::BlockComment {
                     tokens.push(TokenData {
                         token: t,
                         content,
@@ -209,7 +224,6 @@ pub fn tokenize(text: &str) -> Vec<TokenData> {
     }
     tokens
 }
-
 
 // Helper function to get a slice of tokens around the cursor position for context-aware suggestions
 pub fn get_context_slice(tokens: &[TokenData], cursor_offset: usize, n: usize) -> Vec<TokenData> {
@@ -269,7 +283,7 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'s
 
         #[rustfmt::skip]
         // Expression Context
-        Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang | Token::Concat | Token::If | Token::Then | Token::Else => vec!["expr"],
+        Token::Eq | Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent | Token::LParen | Token::LBracket | Token::AndAnd | Token::OrOr | Token::Impl | Token::EqEq | Token::Le | Token::Ge | Token::Lt | Token::Gt | Token::Bang | Token::Concat | Token::If | Token::Then | Token::Else | Token::Arrow | Token::Backslash => vec!["expr"],
 
         _ => vec!["toplevel", "expr"],
     }
@@ -349,6 +363,19 @@ mod test {
         println!("Tokens: {:#?}", tokens);
 
         assert!(tokens.is_empty(), "Expected no tokens, got {:?}", tokens);
+    }
+
+    #[test]
+    fn test_tokenize_upstream_syntax() {
+        let tokens = tokenize(r#"(* comment *) var x: Any out y y = Tuple(1, 2)"#);
+        assert!(
+            tokens
+                .iter()
+                .all(|token| token.token != Token::BlockComment)
+        );
+        assert!(tokens.iter().any(|token| token.token == Token::Var));
+        assert!(tokens.iter().any(|token| token.token == Token::Any));
+        assert!(tokens.iter().any(|token| token.token == Token::Tuple));
     }
 
     #[test]

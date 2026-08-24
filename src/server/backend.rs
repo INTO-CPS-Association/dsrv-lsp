@@ -9,7 +9,7 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use crate::lang::analyser::*;
+use crate::lang::analyser::{Analysis, SpecificationSnapshot};
 use crate::lang::syntax::completions_list::*;
 use crate::lang::syntax::lexer::*;
 use crate::utils::byte_to_pos;
@@ -19,10 +19,9 @@ use ropey::Rope;
 // use tower_lsp::Client;
 // use tower_lsp::lsp_types::*;
 use tower_lsp_server::{Client, ls_types::*};
-use trustworthiness_checker::lang::dsrv::{
-    ast::{SExpr, UntypedDsrvSpecification},
-    span::Span,
-};
+use trustworthiness_checker::lang::dsrv::span::Span;
+
+use crate::lang::pattern_matching::{Literal, SExpr};
 
 macro_rules! documentation {
     ($value:expr) => {
@@ -175,40 +174,35 @@ impl Backend {
         //TODO:This will give wrong hover info if the user is hovering over an area that has changed but was never syntactically correct, So the old AST is still present and provides hover information that does not match the current code. Could be solved by comparing with the lexed token map and use that as backup if the AST node does not match the token to still return something
         // log::info!("node {:?}", node.builtin_label());
 
-        if let Some(label) = node.builtin_label() {
+        if let Some(label) = node.node.builtin_label() {
             // Show hover information for true and false literals.
             if label == "Val" {
-                if node.to_string().contains("false") {
-                    let b = get_builtin_by_label("false")?;
-                    return Some(create_hover_item(b, &node.span, &rope));
-                } else if node.to_string().contains("true") {
-                    let b = get_builtin_by_label("true")?;
-                    return Some(create_hover_item(b, &node.span, &rope));
-                }
+                let value = match node.node {
+                    SExpr::Val(Literal::Bool(value)) => value,
+                    _ => return None,
+                };
+                let builtin = get_builtin_by_label(if value { "true" } else { "false" })?;
+                return Some(create_hover_item(builtin, &node.span, &rope));
             }
-            // For other built-in functions, directly get the hover information based on the label.
             let builtin = get_builtin_by_label(label)?;
             return Some(create_hover_item(builtin, &node.span, &rope));
         }
 
         // If the node is not a built-in function, check if it is a variable and provide hover information based on the variable type and whether it is an input, output or aux variable.
-        match node.node {
-            SExpr::Var(ref var_name) => {
-                let spec = analysis.spec.clone()?;
-                let t = spec.type_annotations.get(var_name);
+        match &node.node {
+            SExpr::Var(var_name) => {
+                let spec = analysis.spec.as_ref()?;
+                let type_str = spec
+                    .type_annotations()
+                    .get(var_name)
+                    .map(|ty| format!(": {ty}"))
+                    .unwrap_or_default();
 
-                // log::info!("Providing hover information for variable `{}`", var_name);
-
-                let type_str = match t {
-                    Some(ty) => format!(": {:?}", ty),
-                    None => String::new(),
-                };
-
-                let (stream_kind, stream_text) = if spec.input_vars.contains(var_name) {
+                let (stream_kind, stream_text) = if spec.input_vars().contains(var_name) {
                     ("in", get_builtin_by_label("in")?.documentation)
-                } else if spec.aux_vars.contains(var_name) {
+                } else if spec.aux_vars().contains(var_name) {
                     ("aux", get_builtin_by_label("aux")?.documentation)
-                } else if spec.output_vars.contains(var_name) {
+                } else if spec.output_vars().contains(var_name) {
                     ("out", get_builtin_by_label("out")?.documentation)
                 } else {
                     ("stream", "stream")
@@ -218,7 +212,6 @@ impl Backend {
                     "```dsrv\n{} {}{}\n```\n---\n{}",
                     stream_kind, var_name, type_str, stream_text
                 );
-                // log::info!("\n{}\n", info);
                 Some(create_hover_variable(&info, &node.span, &rope))
             }
 
@@ -243,10 +236,10 @@ pub struct Variables {
 
 // TODO: Add support for typed variables to be able to provide type information in the completion items.
 // Convert specification items into completion items for autocompletion
-fn get_all_declared_symbols(spec: &UntypedDsrvSpecification) -> Vec<Variables> {
+fn get_all_declared_symbols(spec: &SpecificationSnapshot) -> Vec<Variables> {
     let mut items = Vec::new();
 
-    for name in &spec.input_vars {
+    for name in spec.input_vars() {
         let item = Variables {
             label: name.into(),
             kind: CompletionItemKind::VARIABLE,
@@ -256,7 +249,7 @@ fn get_all_declared_symbols(spec: &UntypedDsrvSpecification) -> Vec<Variables> {
         };
         items.push(item);
     }
-    for name in &spec.aux_vars {
+    for name in spec.aux_vars() {
         let item = Variables {
             label: name.into(),
             kind: CompletionItemKind::VARIABLE,
@@ -266,9 +259,9 @@ fn get_all_declared_symbols(spec: &UntypedDsrvSpecification) -> Vec<Variables> {
         };
         items.push(item);
     }
-    for name in &spec.output_vars {
-        // Check if the variable is already in, as aux vars is both parsed as output and aux variables, so they will be in both lists, but we only want to add them once with the aux variable information as that is more specific.
-        if !spec.aux_vars.contains(name) {
+    for name in spec.output_vars() {
+        // Auxiliary variables have their own completion detail and should not be duplicated as outputs.
+        if !spec.aux_vars().contains(name) {
             let item = Variables {
                 label: name.into(),
                 kind: CompletionItemKind::VARIABLE,
@@ -328,35 +321,39 @@ pub trait SExprHoverExt {
 impl SExprHoverExt for SExpr {
     fn builtin_label(&self) -> Option<&'static str> {
         match self {
-            SExpr::RestrictedDynamic(..) | SExpr::Dynamic(..) => Some("dynamic"),
-            SExpr::Defer(..) => Some("defer"),
-            SExpr::Update(..) => Some("update"),
-            SExpr::Default(..) => Some("default"),
-            SExpr::IsDefined(..) => Some("is_defined"),
-            SExpr::When(..) => Some("when"),
-            SExpr::Latch(..) => Some("latch"),
-            SExpr::Init(..) => Some("init"),
-            SExpr::SIndex(..) => Some("SIndex"),
-            SExpr::If(..) => Some("If then else"),
-            SExpr::MonitoredAt(..) => Some("Monitored_at"),
-            SExpr::Dist(..) => Some("dist"),
-            SExpr::List(..) => Some("List."),
-            SExpr::LIndex(..) => Some("List.get"),
-            SExpr::LAppend(..) => Some("List.append"),
-            SExpr::LConcat(..) => Some("List.concat"),
-            SExpr::LHead(..) => Some("List.head"),
-            SExpr::LTail(..) => Some("List.tail"),
-            SExpr::LLen(..) => Some("List.len"),
-            SExpr::Map(..) => Some("Map."),
-            SExpr::MGet(..) => Some("Map.get"),
-            SExpr::MInsert(..) => Some("Map.insert"),
-            SExpr::MRemove(..) => Some("Map.remove"),
-            SExpr::MHasKey(..) => Some("Map.has_key"),
-            SExpr::Sin(..) => Some("sin"),
-            SExpr::Cos(..) => Some("cos"),
-            SExpr::Tan(..) => Some("tan"),
-            SExpr::Abs(..) => Some("abs"),
-            SExpr::Not(..) => Some("Not"),
+            SExpr::Dynamic => Some("dynamic"),
+            SExpr::Defer => Some("defer"),
+            SExpr::Update => Some("update"),
+            SExpr::Default => Some("default"),
+            SExpr::IsDefined => Some("is_defined"),
+            SExpr::When => Some("when"),
+            SExpr::Latch => Some("latch"),
+            SExpr::Init => Some("init"),
+            SExpr::SIndex => Some("SIndex"),
+            SExpr::If => Some("If then else"),
+            SExpr::MonitoredAt => Some("Monitored_at"),
+            SExpr::Dist => Some("dist"),
+            SExpr::List => Some("List."),
+            SExpr::LIndex => Some("List.get"),
+            SExpr::LAppend => Some("List.append"),
+            SExpr::LConcat => Some("List.concat"),
+            SExpr::LHead => Some("List.head"),
+            SExpr::LTail => Some("List.tail"),
+            SExpr::LLen => Some("List.len"),
+            SExpr::LMap => Some("List.map"),
+            SExpr::LFilter => Some("List.filter"),
+            SExpr::LFold => Some("List.fold"),
+            SExpr::Map => Some("Map."),
+            SExpr::MGet => Some("Map.get"),
+            SExpr::MInsert => Some("Map.insert"),
+            SExpr::MRemove => Some("Map.remove"),
+            SExpr::MHasKey => Some("Map.has_key"),
+            SExpr::Sin => Some("sin"),
+            SExpr::Cos => Some("cos"),
+            SExpr::Tan => Some("tan"),
+            SExpr::Abs => Some("abs"),
+            SExpr::Not => Some("Not"),
+            SExpr::Neg => Some("Neg"),
             SExpr::Val(..) => Some("Val"),
             _ => None,
         }
@@ -835,8 +832,8 @@ mod test {
         );
 
         assert!(
-            completion.len() == 3,
-            "Expected 3 completions (in, out, aux) for empty document, found {}",
+            completion.len() == 4,
+            "Expected 4 completions (in, out, aux, var) for empty document, found {}",
             completion.len()
         );
         assert!(

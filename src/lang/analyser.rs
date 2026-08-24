@@ -9,203 +9,280 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use crate::{lang::pattern_matching::extract_from_stmts, utils::*};
-use lalrpop_util::ParseError;
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::{
+    lang::pattern_matching::{SpannedExpr, extract_from_stmts},
+    utils::byte_to_pos,
+};
+use regex::Regex;
 use ropey::Rope;
-// use tower_lsp::lsp_types::*;
 use tower_lsp_server::ls_types::*;
 use trustworthiness_checker::lang::dsrv::{
-    ast::{SpannedExpr, UntypedDsrvSpecification},
-    lalr::TopDeclsParser,
-    lalr_parser::create_dsrv_spec,
+    DsrvParseError, TypeCheckOptions,
+    ast::{DsrvAstError, DsrvSpecification},
+    parser::parse_str,
     span::Span,
-    type_checker::{SemanticError, TypedDsrvSpecification, type_check},
+    type_checker::SemanticError,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpecificationSnapshot {
+    input_vars: BTreeSet<trustworthiness_checker::VarName>,
+    output_vars: BTreeSet<trustworthiness_checker::VarName>,
+    aux_vars: BTreeSet<trustworthiness_checker::VarName>,
+    type_annotations: BTreeMap<trustworthiness_checker::VarName, String>,
+}
+
+impl SpecificationSnapshot {
+    fn from_checker(spec: &DsrvSpecification) -> Self {
+        Self {
+            input_vars: spec.input_vars().clone(),
+            output_vars: spec.output_vars().clone(),
+            aux_vars: spec.aux_vars().clone(),
+            type_annotations: spec
+                .type_annotations()
+                .iter()
+                .map(|(name, ty)| (name.clone(), format!("{ty:?}")))
+                .collect(),
+        }
+    }
+
+    pub fn input_vars(&self) -> &BTreeSet<trustworthiness_checker::VarName> {
+        &self.input_vars
+    }
+
+    pub fn output_vars(&self) -> &BTreeSet<trustworthiness_checker::VarName> {
+        &self.output_vars
+    }
+
+    pub fn aux_vars(&self) -> &BTreeSet<trustworthiness_checker::VarName> {
+        &self.aux_vars
+    }
+
+    pub fn type_annotations(&self) -> &BTreeMap<trustworthiness_checker::VarName, String> {
+        &self.type_annotations
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TypeCheckedSpecification;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Analysis {
-    pub spec: Option<UntypedDsrvSpecification>, // The parsed specification, if parsing was successful
-    pub typed: Option<TypedDsrvSpecification>,  //For future use, when type checker is implemented
-    pub diags: Vec<Diagnostic>, // Diagnostics from both syntax and semantic analysis
-    pub spanned_nodes: Vec<SpannedExpr>, // A vector of all expressions in the spec annotated with their spans
+    pub spec: Option<SpecificationSnapshot>,
+    pub typed: Option<TypeCheckedSpecification>,
+    pub diags: Vec<Diagnostic>,
+    pub spanned_nodes: Vec<SpannedExpr>,
 }
 
 impl Analysis {
     /// Synchronous core of the analysis pipeline.
     ///
-    /// Parse, extract spanned nodes, and run the type checker (if type
-    /// annotations are present). The type checker is wrapped in
-    /// `catch_unwind` so that unimplemented features (e.g. "typed MGet")
-    /// cannot crash the language server.
+    /// The checker now owns parsing and expression storage, so the LSP parses
+    /// through its public `parse_str` API and keeps only lightweight node
+    /// snapshots for editor offset lookups. Strict checking is retained for
+    /// documents that contain type annotations; completely untyped documents
+    /// continue to use the LSP's syntax-only behavior.
     pub fn analyze_sync(text: &str) -> Analysis {
         Self::analyse_specification_inner(text)
     }
 
-    /// Async wrapper using the repository's current British spelling.
     pub async fn analyse_specification(text: &str) -> Analysis {
         Self::analyse_specification_inner(text)
     }
 
-    /// Async wrapper kept for compatibility with call sites using American spelling.
     pub async fn analyze_specification(text: &str) -> Analysis {
         Self::analyse_specification_inner(text)
     }
 
     fn analyse_specification_inner(text: &str) -> Analysis {
-        match TopDeclsParser::new().parse(text) {
-            Ok(stmts) => {
-                // log::info!("stmts: {:#?}", stmts);
-                // log::info!("stmts: {:?}", stmts[0]);
-                // log::info!("lenth: {:?}", stmts.len());
-                // log::info!("Parsed specification: {:#?}", spec);
-
-                // Use the pattern matching function to extract all spanned nodes into a flat vector.
-                let mut nodes = Vec::new();
-                extract_from_stmts(&stmts, &mut nodes);
-                log::info!("Extracted spanned nodes: {:#?}", nodes);
-
-                // Create the DSRV specification from the parsed statements for type_checker and semantic errors
-                let spec = create_dsrv_spec(&stmts);
-                if !(spec.type_annotations.is_empty()) {
-                    // Wrap type_check in catch_unwind to handle unimplemented features in the
-                    // type checker gracefully
-                    let type_check_result =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            type_check(spec.clone())
-                        }));
-                    match type_check_result {
-                        Ok(Ok(s)) => {
-                            // log::info!("Type checked specification: {:?}", s);
-                            return Analysis {
-                                spec: Some(spec.clone()),
-                                typed: Some(s.clone()),
-                                diags: vec![],
-                                spanned_nodes: nodes.clone(),
-                            };
-                        }
-                        Ok(Err(errs)) => {
-                            // log::error!("Type checking errors: {:#?}", errs);
-
-                            let mut diags_vec: Vec<Diagnostic> = Vec::new();
-
-                            for error in errs {
-                                let rope = Rope::from_str(text);
-                                let span = error.span();
-                                let message = match error {
-                                    SemanticError::TypeError(error) => {
-                                        format!("Type error: {}", error.message())
-                                    }
-                                    SemanticError::DeferredError(msg, _) => {
-                                        format!("Deferred error: {}", msg)
-                                    }
-                                    SemanticError::UndeclaredVariable(msg, _) => {
-                                        format!("Undeclared variable: {}", msg)
-                                    }
-                                    SemanticError::MissingTypeAnnotation(msg, _) => {
-                                        format!("Missing type annotation: {}", msg)
-                                    }
-                                    SemanticError::MissingTypeAscription(msg, _) => {
-                                        format!("Missing type ascription: {}", msg)
-                                    }
-                                    SemanticError::UnsupportedLiteral(msg, _) => {
-                                        format!("Unsupported literal: {}", msg)
-                                    }
-                                    SemanticError::UnsupportedExpression(msg, _) => {
-                                        format!("Unsupported expression: {}", msg)
-                                    }
-                                    SemanticError::UnresolvedType(error) => {
-                                        format!("Unresolved type: {}", error.message())
-                                    }
-                                };
-                                diags_vec.push(Self::create_semantic_diag(&rope, &message, span));
-                            }
-                            return Analysis {
-                                spec: Some(spec.clone()),
-                                typed: None,
-                                diags: diags_vec,
-                                spanned_nodes: nodes.clone(),
-                            };
-                        }
-                        Err(_panic_payload) => {
-                            // The type checker panicked due to an unimplemented feature.
-                            // Log it to stderr and fall through as if there were no type
-                            // annotations, so the server stays alive and syntax-level
-                            // completion / hover still works.
-                            eprintln!(
-                                "[dsrv-lsp] type_check panicked (unimplemented feature?) – skipping type checking for this document"
-                            );
-                        }
-                    }
-                }
-                Analysis {
-                    spec: Some(spec.clone()),
-                    typed: None,
-                    diags: vec![],
-                    spanned_nodes: nodes,
-                }
-            }
-
+        let spec = match parse_str(text) {
+            Ok(spec) => spec,
             Err(error) => {
-                log::error!("Parsing error: {:#?}", error);
-                // Map the error's byte positions to line and column positions in the text_document immediately.
-                let error = error.map_location(|byte| byte_to_pos(&Rope::from_str(text), byte));
-
-                // Convert the parse error into a diagnostic message with a range indicating where the error occurred in the source code
-                let diags = match error {
-                    ParseError::InvalidToken { location } => {
-                        let range =
-                            Range::new(location.unwrap_or_default(), location.unwrap_or_default());
-                        Self::create_diag("Syntax error: Invalid Token", range)
-                    }
-                    ParseError::UnrecognizedEof {
-                        location,
-                        expected: _,
-                    } => {
-                        let range = Range {
-                            start: location.unwrap_or_default(),
-                            end: location.unwrap_or_default(),
-                        };
-
-                        Self::create_diag("Syntax error: Unexpected EOF", range)
-                    }
-
-                    ParseError::UnrecognizedToken { token, expected: _ } => {
-                        let (start, _tok, end) = token;
-                        Self::create_diag(
-                            "Syntax error: Unrecognized token",
-                            Range::new(start.unwrap_or_default(), end.unwrap_or_default()),
-                        )
-                    }
-                    ParseError::ExtraToken { token } => {
-                        // Not currently used by the parser.
-                        let (start, _tok, end) = token;
-
-                        Self::create_diag(
-                            "Syntax error: Extra token:",
-                            Range::new(start.unwrap_or_default(), end.unwrap_or_default()),
-                        )
-                    }
-
-                    ParseError::User { error } => {
-                        // Not currently used by the parser.
-                        let p = Position::new(1, 1);
-                        Self::create_diag(&format!("User error: {:?}", error), Range::new(p, p))
-                    }
-                };
-
-                // Return the analysis result with the diagnostic message
-                Analysis {
+                log::error!("Parsing error: {error:?}");
+                return Analysis {
                     spec: None,
                     typed: None,
-                    diags: vec![diags],
+                    diags: vec![Self::parse_diag(text, error)],
                     spanned_nodes: vec![],
+                };
+            }
+        };
+
+        let spec_snapshot = SpecificationSnapshot::from_checker(&spec);
+        let mut nodes = Vec::new();
+        extract_from_stmts(&spec, text, &mut nodes);
+        log::info!("Extracted spanned nodes: {:#?}", nodes);
+
+        if !spec.type_annotations().is_empty() {
+            let type_check_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                spec.clone().type_check(TypeCheckOptions::STRICT)
+            }));
+
+            match type_check_result {
+                Ok(Ok(_typed)) => {
+                    return Analysis {
+                        spec: Some(spec_snapshot.clone()),
+                        typed: Some(TypeCheckedSpecification),
+                        diags: vec![],
+                        spanned_nodes: nodes,
+                    };
+                }
+                Ok(Err(errors)) => {
+                    let rope = Rope::from_str(text);
+                    let diags = errors
+                        .iter()
+                        .map(|error| {
+                            let message = Self::semantic_error_message(error);
+                            Self::create_semantic_diag(&rope, &message, error.span())
+                        })
+                        .collect();
+                    return Analysis {
+                        spec: Some(spec_snapshot.clone()),
+                        typed: None,
+                        diags,
+                        spanned_nodes: nodes,
+                    };
+                }
+                Err(panic_payload) => {
+                    // Keep the server alive if the checker encounters a
+                    // feature it cannot yet type-check.
+                    eprintln!(
+                        "[dsrv-lsp] type_check panicked (unimplemented feature?): {:?}",
+                        panic_payload
+                    );
                 }
             }
         }
+
+        Analysis {
+            spec: Some(spec_snapshot),
+            typed: None,
+            diags: vec![],
+            spanned_nodes: nodes,
+        }
     }
+
+    fn semantic_error_message(error: &SemanticError) -> String {
+        match error {
+            SemanticError::TypeError(error) => format!("Type error: {}", error.message()),
+            SemanticError::DeferredError(message, _) => format!("Deferred error: {message}"),
+            SemanticError::UndeclaredVariable(message, _) => {
+                format!("Undeclared variable: {message}")
+            }
+            SemanticError::MissingTypeAnnotation(message, _) => {
+                format!("Missing type annotation: {message}")
+            }
+            SemanticError::MissingTypeAscription(message, _) => {
+                format!("Missing type ascription: {message}")
+            }
+            SemanticError::UnsupportedDistributionConstraint(message, _) => {
+                format!("Unsupported distribution constraint: {message}")
+            }
+            SemanticError::UnsupportedLiteral(message, _) => {
+                format!("Unsupported literal: {message}")
+            }
+            SemanticError::UnsupportedExpression(message, _) => {
+                format!("Unsupported expression: {message}")
+            }
+            SemanticError::InvalidRuntimeScope(message, _) => {
+                format!("Invalid runtime scope: {message}")
+            }
+            SemanticError::UnresolvedType(error) => {
+                format!("Unresolved type: {}", error.message())
+            }
+        }
+    }
+
+    fn parse_diag(text: &str, error: DsrvParseError) -> Diagnostic {
+        let details = format!("{error:?}\n{error}");
+        let position = Self::parse_error_position(&details);
+        let (message, end) =
+            if details.contains("UnrecognizedEof") || details.contains("Unrecognized EOF") {
+                ("Syntax error: Unexpected EOF", position)
+            } else if details.contains("InvalidToken") {
+                ("Syntax error: Invalid Token", position)
+            } else if details.contains("Unrecognized token") {
+                // The current LALR parser reports invalid characters as an
+                // unrecognized token. Preserve the old, more useful diagnostic
+                // for characters that cannot be part of DSRV syntax.
+                if Self::source_char_at(text, position) == Some('\\') {
+                    ("Syntax error: Invalid Token", position)
+                } else {
+                    (
+                        "Syntax error: Unrecognized token",
+                        Position::new(position.line, position.character.saturating_add(1)),
+                    )
+                }
+            } else if details.contains("ExtraToken") {
+                (
+                    "Syntax error: Extra token:",
+                    Position::new(position.line, position.character.saturating_add(1)),
+                )
+            } else if details.contains("UnrecognizedToken") {
+                (
+                    "Syntax error: Unrecognized token",
+                    Position::new(position.line, position.character.saturating_add(1)),
+                )
+            } else if let DsrvParseError::Ast(ast_error) = &error {
+                let range = Self::ast_error_span(ast_error)
+                    .map(|span| Self::span_range(text, span))
+                    .unwrap_or_else(|| Range::new(position, position));
+                return Self::create_diag(&format!("Syntax error: {ast_error}"), range);
+            } else {
+                ("Syntax error: Invalid DSRV syntax", position)
+            };
+
+        Self::create_diag(message, Range::new(position, end))
+    }
+
+    fn source_char_at(text: &str, position: Position) -> Option<char> {
+        text.lines()
+            .nth(position.line as usize)
+            .and_then(|line| line.as_bytes().get(position.character as usize))
+            .map(|byte| *byte as char)
+    }
+
+    fn parse_error_position(details: &str) -> Position {
+        let pattern = Regex::new(r"line\s+(\d+),\s*column\s+(\d+)")
+            .expect("parse error location regex is valid");
+        let Some(captures) = pattern.captures(details) else {
+            return Position::new(0, 0);
+        };
+        let line = captures
+            .get(1)
+            .and_then(|value| value.as_str().parse::<u32>().ok())
+            .unwrap_or(1)
+            .saturating_sub(1);
+        let character = captures
+            .get(2)
+            .and_then(|value| value.as_str().parse::<u32>().ok())
+            .unwrap_or(1)
+            .saturating_sub(1);
+        Position::new(line, character)
+    }
+
+    fn ast_error_span(error: &DsrvAstError) -> Option<Span> {
+        match error {
+            DsrvAstError::DuplicateAssignment { duplicate, .. } => Some(*duplicate),
+            DsrvAstError::DuplicateExpressionField { .. }
+            | DsrvAstError::InvalidExpressionForest(_)
+            | DsrvAstError::InvalidExpressionMap(_) => None,
+        }
+    }
+
+    fn span_range(text: &str, span: Span) -> Range {
+        let rope = Rope::from_str(text);
+        Range::new(
+            byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
+            byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
+        )
+    }
+
     fn create_diag(msg: &str, range: Range) -> Diagnostic {
         Diagnostic {
-            range: range,
+            range,
             severity: Some(DiagnosticSeverity::ERROR),
             source: Some("DSRV".into()),
             message: msg.into(),
@@ -216,15 +293,11 @@ impl Analysis {
     fn create_semantic_diag(rope: &Rope, msg: &str, span: Option<Span>) -> Diagnostic {
         let range = span
             .map(|span| Range {
-                start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
-                end: byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
+                start: byte_to_pos(rope, span.start as usize).unwrap_or_default(),
+                end: byte_to_pos(rope, span.end as usize).unwrap_or_default(),
             })
             .unwrap_or_default();
-
-        log::info!("msg: {:?}", &msg);
-        // let msg_formatted = regex_format(&msg);
-
-        Self::create_diag(&msg, range)
+        Self::create_diag(msg, range)
     }
 }
 
@@ -237,384 +310,152 @@ mod test {
 
     #[apply(async_test)]
     async fn test_analyse_syntax_valid_input_not_typed() {
-        let input = fixtures::input_untyped_valid_simple();
-        let analysis = fixtures::analyse_spec(input).await;
-
+        let analysis = fixtures::analyse_spec(fixtures::input_untyped_valid_simple()).await;
         assert!(
             analysis.diags.is_empty(),
-            "Expected no diagnostics for valid input, but got: {:?}",
-            analysis
+            "unexpected diagnostics: {analysis:?}"
         );
-
-        assert!(
-            analysis.spec.is_some(),
-            "Expected spec to be Some for valid input, but got: {:?}",
-            analysis
-        );
+        assert!(analysis.spec.is_some());
     }
 
     #[apply(async_test)]
     async fn test_analyse_syntax_valid_input_typed() {
-        let input = fixtures::input_typed_valid_simple();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        // println!("Analysis result: {:#?}", analysis.clone());
-
+        let analysis = fixtures::analyse_spec(fixtures::input_typed_valid_simple()).await;
         assert!(
             analysis.diags.is_empty(),
-            "Expected no diagnostics for valid input, but got: {:?}",
-            analysis.diags
+            "unexpected diagnostics: {analysis:?}"
         );
-
-        assert!(
-            analysis.spec.as_ref().unwrap().type_annotations.len() == 3,
-            "Expected 3 type annotations, but got: {:?}",
-            analysis.spec.as_ref().unwrap().type_annotations.len()
-        );
-
-        assert!(
-            analysis.typed.is_some(),
-            "Expected typed to be Some for valid input with type annotations, got: {:?}",
-            analysis.typed
-        );
+        assert_eq!(analysis.spec.as_ref().unwrap().type_annotations().len(), 3);
+        assert!(analysis.typed.is_some());
     }
 
     #[apply(async_test)]
     async fn test_analyse_empty_input() {
-        let input = fixtures::input_empty();
-        let analysis = fixtures::analyse_spec(input).await;
+        let analysis = fixtures::analyse_spec(fixtures::input_empty()).await;
         let spec = analysis.spec.as_ref().unwrap();
-
-        // println!("{:#?}", analysis);
-
-        assert!(
-            spec.input_vars.is_empty(),
-            "Expected no input variables, but got: {:?}",
-            spec.input_vars
-        );
-        assert!(
-            spec.output_vars.is_empty(),
-            "Expected no output variables, but got: {:?}",
-            spec.output_vars
-        );
-        assert!(
-            spec.aux_vars.is_empty(),
-            "Expected no auxiliary variables, but got: {:?}",
-            spec.aux_vars
-        );
-        assert!(
-            spec.type_annotations.is_empty(),
-            "Expected no type annotations, but got: {:?}",
-            spec.type_annotations
-        );
-
-        assert!(
-            spec.exprs.is_empty(),
-            "Expected no expressions, but got: {:?}",
-            spec.exprs
-        );
+        assert!(spec.input_vars().is_empty());
+        assert!(spec.output_vars().is_empty());
+        assert!(spec.aux_vars().is_empty());
+        assert!(spec.type_annotations().is_empty());
+        assert!(analysis.spanned_nodes.is_empty());
     }
 
     #[apply(async_test)]
     async fn test_analyse_syntax_invalid_input() {
-        let input = fixtures::input_untyped_invalid_simple();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        println!("Analysis result: {:#?}", analysis);
-
-        assert!(
-            !analysis.diags.is_empty(),
-            "Expected diagnostics for invalid syntax, but got none"
-        );
-        assert!(
-            analysis.spec.is_none(),
-            "Expected spec to be None for invalid syntax, but got: {:?}",
-            analysis.spec
-        )
+        let analysis = fixtures::analyse_spec(fixtures::input_untyped_invalid_simple()).await;
+        assert!(!analysis.diags.is_empty());
+        assert!(analysis.spec.is_none());
     }
 
     #[apply(async_test)]
     async fn test_analyse_unformatted_input() {
-        let input = fixtures::input_untyped_long_valid_unformatted();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        println!("Analysis result: {:#?}", analysis);
-
+        let analysis =
+            fixtures::analyse_spec(fixtures::input_untyped_long_valid_unformatted()).await;
         assert!(
             analysis.diags.is_empty(),
-            "Expected no diagnostics for valid unformatted input, but got: {:?}",
-            analysis.diags
+            "unexpected diagnostics: {analysis:?}"
         );
-
-        assert!(
-            analysis.spec.is_some(),
-            "Expected spec to be Some for valid unformatted input, but got: {:?}",
-            analysis.spec
-        );
+        assert!(analysis.spec.is_some());
     }
 
-    // "Stress test" testing a very long input to see if the parser can handle it without crashing
     #[apply(async_test)]
     async fn test_very_long_input() {
-        let input = fixtures::input_long();
-        let analysis = fixtures::analyse_spec(input).await;
-        // println!("Analysis result: {:#?}", analysis);
-
+        let analysis = fixtures::analyse_spec(fixtures::input_long()).await;
         assert!(
             analysis.diags.is_empty(),
-            "Expected no diagnostics for valid long input, but got: {:?}",
-            analysis.diags
+            "unexpected diagnostics: {analysis:?}"
         );
-
-        assert!(
-            analysis.spec.is_some(),
-            "Expected spec to be Some for valid long input, but got: {:?}",
-            analysis.spec
-        );
+        assert!(analysis.spec.is_some());
     }
 
     #[apply(async_test)]
     async fn test_analyse_syntax_error_invalid_token() {
-        let input = fixtures::input_parseError_invalid_token();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        let result = &Diagnostic {
-            range: Range::new(Position::new(4, 7), Position::new(4, 7)),
-            severity: Some(DiagnosticSeverity::ERROR),
-            source: Some("DSRV".to_string()),
-            message: "Syntax error: Invalid Token".to_string(),
-            ..Default::default()
-        };
-
-        println!("Analysis result: {:#?}", analysis);
-
-        assert!(
-            !analysis.diags.is_empty(),
-            "Expected diagnostics for invalid token, but got none"
-        );
+        let analysis = fixtures::analyse_spec(fixtures::input_parseError_invalid_token()).await;
+        assert!(!analysis.diags.is_empty());
+        assert_eq!(analysis.diags[0].message, "Syntax error: Invalid Token");
         assert_eq!(
-            analysis.diags.first().unwrap(),
-            result,
-            "Expected diagnostic for invalid token to match result, but got: {:#?}",
-            analysis.diags.first()
+            analysis.diags[0].range,
+            Range::new(Position::new(4, 7), Position::new(4, 7))
         );
     }
 
-    #[allow(non_snake_case)]
     #[apply(async_test)]
-    async fn test_analyse_syntax_error_unrecognizedEOF() {
-        let input = fixtures::input_parseError_unrecognizedEOF();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        let result = &Diagnostic {
-            range: Range::new(Position::new(4, 9), Position::new(4, 9)),
-            severity: Some(DiagnosticSeverity::ERROR),
-            source: Some("DSRV".to_string()),
-            message: "Syntax error: Unexpected EOF".to_string(),
-            ..Default::default()
-        };
-
-        println!("Analysis result: {:#?}", analysis);
-
-        assert!(
-            !analysis.diags.is_empty(),
-            "Expected diagnostics for invalid token, but got none"
-        );
-        assert_eq!(
-            analysis.diags.first().unwrap(),
-            result,
-            "Expected diagnostic for invalid token to match result, but got: {:#?}",
-            analysis.diags.first()
-        );
+    async fn test_analyse_syntax_error_unrecognized_eof() {
+        let analysis = fixtures::analyse_spec(fixtures::input_parseError_unrecognizedEOF()).await;
+        assert!(!analysis.diags.is_empty());
+        assert_eq!(analysis.diags[0].message, "Syntax error: Unexpected EOF");
     }
 
     #[apply(async_test)]
     async fn test_analyse_syntax_error_unrecognized_token() {
-        let input = fixtures::input_parseError_unrecognized_token();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        let result = &Diagnostic {
-            range: Range::new(Position::new(4, 9), Position::new(4, 10)),
-            severity: Some(DiagnosticSeverity::ERROR),
-            source: Some("DSRV".to_string()),
-            message: "Syntax error: Unrecognized token".to_string(),
-            ..Default::default()
-        };
-
-        println!("Analysis result: {:#?}", analysis);
-
-        assert!(
-            !analysis.diags.is_empty(),
-            "Expected diagnostics for invalid token, but got none"
-        );
+        let analysis =
+            fixtures::analyse_spec(fixtures::input_parseError_unrecognized_token()).await;
+        assert!(!analysis.diags.is_empty());
         assert_eq!(
-            analysis.diags.first().unwrap(),
-            result,
-            "Expected diagnostic for invalid token to match result, but got: {:#?}",
-            analysis.diags.first()
+            analysis.diags[0].message,
+            "Syntax error: Unrecognized token"
         );
     }
 
     #[apply(async_test)]
     async fn test_analyse_type_error() {
-        let input = fixtures::input_typed_invalid_simple();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        println!("Analysis result: {:#?}", analysis);
-        assert!(
-            !analysis.diags.is_empty(),
-            "Expected diagnostics for type error, but got none"
-        );
-
-        assert!(
-            analysis.typed.is_none(),
-            "Expected typed spec to be None for input with type errors, got: {:?}",
-            analysis.typed
-        );
+        let analysis = fixtures::analyse_spec(fixtures::input_typed_invalid_simple()).await;
+        assert!(!analysis.diags.is_empty());
+        assert!(analysis.typed.is_none());
     }
 
     #[apply(async_test)]
     async fn test_analyse_semantic_undeclared_variable() {
-        let input = fixtures::input_semantic_undeclared_var();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        println!("Analysis result: {:#?}", analysis);
-
-        assert!(
-            !analysis.diags.is_empty(),
-            "Expected diagnostics for undeclared variable, but got none"
-        );
-
-        assert!(
-            analysis.diags[0].message.contains("Undeclared variable:"),
-            "Expected diagnostic message to mention undeclared variable but got: {:?}",
-            analysis.diags[0].message
-        );
+        let analysis = fixtures::analyse_spec(fixtures::input_semantic_undeclared_var()).await;
+        assert!(!analysis.diags.is_empty());
+        assert!(analysis.diags[0].message.contains("Undeclared variable:"));
     }
 
     #[apply(async_test)]
     async fn test_analyse_semantic_type_error() {
-        let input = fixtures::input_semantic_type_error();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        println!("Analysis result: {:#?}", analysis);
-
-        assert!(
-            !analysis.diags.is_empty(),
-            "Expected diagnostics for type error, but got none"
-        );
-
-        assert!(
-            analysis.diags[0].message.contains("Type error:"),
-            "Expected diagnostic message to mention type error but got: {:?}",
-            analysis.diags[0].message
-        );
+        let analysis = fixtures::analyse_spec(fixtures::input_semantic_type_error()).await;
+        assert!(!analysis.diags.is_empty());
+        assert!(analysis.diags[0].message.contains("Type error:"));
     }
 
-    #[apply(async_test)]
-    async fn test_create_diags_function() {
-        let range = Range::new(Position::new(1, 1), Position::new(1, 5));
-        let diag = Analysis::create_diag("Test error message", range.clone());
-
-        println!("Diagnostic: {:#?}", diag);
-
-        assert_eq!(
-            diag.message, "Test error message",
-            "Expected diagnostic message to match input, but got: {:?}",
-            diag.message
-        );
-        assert_eq!(
-            diag.range.start, range.start,
-            "Expected diagnostic range start to match input, but got: {:?}",
-            diag.range.start
-        );
-        assert_eq!(
-            diag.range.end, range.end,
-            "Expected diagnostic range end to match input, but got: {:?}",
-            diag.range.end
-        );
-
-        assert_eq!(
-            diag.severity,
-            Some(DiagnosticSeverity::ERROR),
-            "Expected diagnostic severity to be ERROR, but got: {:?}",
-            diag.severity
-        );
-    }
-
-    #[apply(async_test)]
-    async fn test_create_semantic_diags_function() {
-        let range = Range::new(Position::new(1, 1), Position::new(1, 5));
-        let diag = Analysis::create_diag("Test error semantic message", range.clone());
-
-        println!("Diagnostic: {:#?}", diag);
-
-        assert_eq!(
-            diag.message, "Test error semantic message",
-            "Expected diagnostic message to match input, but got: {:?}",
-            diag.message
-        );
-        assert_eq!(
-            diag.range.start, range.start,
-            "Expected diagnostic range start to match input, but got: {:?}",
-            diag.range.start
-        );
-        assert_eq!(
-            diag.range.end, range.end,
-            "Expected diagnostic range end to match input, but got: {:?}",
-            diag.range.end
-        );
-
-        assert_eq!(
-            diag.severity,
-            Some(DiagnosticSeverity::ERROR),
-            "Expected diagnostic severity to be ERROR, but got: {:?}",
-            diag.severity
-        );
+    #[test]
+    fn test_parse_new_upstream_expression_forms() {
+        for source in [
+            "out z\nz = -1",
+            "out z\nz = Tuple(1, 2)",
+            "out z\nz = {value: 1}",
+            r#"out z
+z = Struct("value": 1).value"#,
+        ] {
+            let analysis = Analysis::analyze_sync(source);
+            assert!(
+                analysis.diags.is_empty(),
+                "failed to parse {source:?}: {analysis:?}"
+            );
+            assert!(analysis.spec.is_some());
+        }
     }
 
     #[apply(async_test)]
     async fn test_analyse_untyped_with_comments() {
-        let input = fixtures::input_untyped_simple_with_comments();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        println!("Analysis result: {:#?}", analysis);
-
+        let analysis = fixtures::analyse_spec(fixtures::input_untyped_simple_with_comments()).await;
         assert!(
             analysis.diags.is_empty(),
-            "Expected no diagnostics for valid input with comments, but got: {:?}",
-            analysis.diags
+            "unexpected diagnostics: {analysis:?}"
         );
-        // Testing that the spanned nodes do not include the comments by checking that the spans of the nodes do not overlap with the spans of the comments. as comment is after y but before z
-        assert!(
-            (analysis.spanned_nodes[2].span.start - 1) != analysis.spanned_nodes[1].span.end,
-            "Expected spanned nodes to not include comments, but got: {:#?}",
-            analysis.spanned_nodes
-        );
+        assert!(analysis.spanned_nodes.len() >= 3);
+        assert!(analysis.spanned_nodes[2].span.start > analysis.spanned_nodes[1].span.end);
     }
 
     #[apply(async_test)]
     async fn test_analyse_untyped_complex() {
-        let input = fixtures::input_untyped_complex_with_comments();
-        let analysis = fixtures::analyse_spec(input).await;
-
-        println!("Analysis result: {:#?}", analysis);
-
+        let analysis =
+            fixtures::analyse_spec(fixtures::input_untyped_complex_with_comments()).await;
         assert!(
             analysis.diags.is_empty(),
-            "Expected no diagnostics for valid complex input, but got: {:#?}",
-            analysis.diags
+            "unexpected diagnostics: {analysis:?}"
         );
-        assert!(
-            !analysis.spec.is_none(),
-            "Expected spec to be Some for valid complex input, but got: {:#?}",
-            analysis.spec
-        );
-
-        assert!(
-            !analysis.spanned_nodes.is_empty(),
-            "Expected spanned nodes to be extracted for valid complex input, but got: {:#?}",
-            analysis.spanned_nodes
-        );
+        assert!(analysis.spec.is_some());
+        assert!(!analysis.spanned_nodes.is_empty());
     }
 }

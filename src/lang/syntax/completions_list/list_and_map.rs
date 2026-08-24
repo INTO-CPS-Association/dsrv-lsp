@@ -84,10 +84,37 @@ pub static LIST: &[DsrvBuiltIn] = &[
         detail: "List.len(L)",
         documentation: "Returns the length of the list",
     },
+    DsrvBuiltIn {
+        label: "List.map",
+        kind: CompletionItemKind::METHOD,
+        trigger_context: &["list method"],
+        insert_text: "map($1, $2)",
+        insert_text_format: InsertTextFormat::SNIPPET,
+        detail: "List.map(f, L)",
+        documentation: "Applies a function to each element of a list.",
+    },
+    DsrvBuiltIn {
+        label: "List.filter",
+        kind: CompletionItemKind::METHOD,
+        trigger_context: &["list method"],
+        insert_text: "filter($1, $2)",
+        insert_text_format: InsertTextFormat::SNIPPET,
+        detail: "List.filter(f, L)",
+        documentation: "Keeps list elements selected by a predicate.",
+    },
+    DsrvBuiltIn {
+        label: "List.fold",
+        kind: CompletionItemKind::METHOD,
+        trigger_context: &["list method"],
+        insert_text: "fold($1, $2, $3)",
+        insert_text_format: InsertTextFormat::SNIPPET,
+        detail: "List.fold(f, init, L)",
+        documentation: "Folds a list with a function and initial value.",
+    },
 ];
 
 pub static MAP: &[DsrvBuiltIn] = &[
-      DsrvBuiltIn {
+    DsrvBuiltIn {
         label: "Map",
         kind: CompletionItemKind::CONSTRUCTOR,
         trigger_context: &["expr"],
@@ -97,12 +124,12 @@ pub static MAP: &[DsrvBuiltIn] = &[
         documentation: "Constructs a new Map container from key-value pairs where keys are strings.",
     },
     DsrvBuiltIn {
-        label: "Map",
+        label: "Map.",
         kind: CompletionItemKind::CLASS,
         trigger_context: &["expr"],
         insert_text: "Map.",
         insert_text_format: InsertTextFormat::PLAIN_TEXT,
-        detail: "Map",
+        detail: "Map.",
         documentation: "The Map type, to be called with methods like Map.get, Map.insert, etc.",
     },
     DsrvBuiltIn {
