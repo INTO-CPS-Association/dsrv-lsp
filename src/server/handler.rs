@@ -87,25 +87,12 @@ impl LanguageServer for Backend {
 
     //Done: Added the trigger character "." to provide suggestions for fields and methods when the user types a dot after an expression, added all the built in functions and variables to the completion list, and added the ability to provide suggestions based on the current scope and context of the code being edited.
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let completion =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.get_completion(params)))
-                .unwrap_or_else(|panic_payload| {
-                    eprintln!("[dsrv-lsp] completion panicked: {:?}", panic_payload);
-                    None
-                });
-        Ok(completion.map(CompletionResponse::Array))
+        Ok(self.get_completion(params).map(CompletionResponse::Array))
     }
 
     // Used the backend to create the hover items for the token at the position of the hover and return it to the client to be displayed in the editor.
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        //Give token based on the position of the hover and return hover information based on the token type (input, output, aux, expr)
-        let hover =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.provide_hover(params)))
-                .unwrap_or_else(|panic_payload| {
-                    eprintln!("[dsrv-lsp] hover panicked: {:?}", panic_payload);
-                    None
-                });
-        Ok(hover)
+        Ok(self.provide_hover(params))
     }
 }
 

@@ -9,5 +9,5 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-pub mod lexer;
 pub mod completions_list;
+pub mod lexer;

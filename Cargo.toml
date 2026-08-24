@@ -16,7 +16,7 @@ doctest = false
 
 
 [dependencies]
-contiguous-tree = { git = "https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker" }
+
 dashmap = "6.1.0"
 ecow = "0.2.6"
 
@@ -29,7 +29,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"
 tower-lsp-server = "0.23.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-trustworthiness_checker = { git = "https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker" }
+trustworthiness_checker = { git = "https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker", rev = "b1788d7", features = ["thread-safe-ast"] }
 
 
 [dev-dependencies]

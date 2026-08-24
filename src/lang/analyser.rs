@@ -9,10 +9,10 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::cmp::Reverse;
 
 use crate::{
-    lang::pattern_matching::{SpannedExpr, extract_from_stmts},
+    lang::syntax::lexer::{Token, tokenize},
     utils::byte_to_pos,
 };
 use regex::Regex;
@@ -20,70 +20,37 @@ use ropey::Rope;
 use tower_lsp_server::ls_types::*;
 use trustworthiness_checker::lang::dsrv::{
     DsrvParseError, TypeCheckOptions,
-    ast::{DsrvAstError, DsrvSpecification},
+    ast::{CheckedDsrvSpecification, DsrvAstError, DsrvSpecification, ExprRef},
     parser::parse_str,
     span::Span,
     type_checker::SemanticError,
 };
 
+/// A source symbol whose span is not exposed by the checker AST.
+///
+/// The checker owns expression spans. Declaration and assignment-LHS spans are
+/// parser-local, so this index keeps only the source name and its span for
+/// those two editor cases.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SpecificationSnapshot {
-    input_vars: BTreeSet<trustworthiness_checker::VarName>,
-    output_vars: BTreeSet<trustworthiness_checker::VarName>,
-    aux_vars: BTreeSet<trustworthiness_checker::VarName>,
-    type_annotations: BTreeMap<trustworthiness_checker::VarName, String>,
+pub struct SymbolSpan {
+    pub name: String,
+    pub span: Span,
 }
 
-impl SpecificationSnapshot {
-    fn from_checker(spec: &DsrvSpecification) -> Self {
-        Self {
-            input_vars: spec.input_vars().clone(),
-            output_vars: spec.output_vars().clone(),
-            aux_vars: spec.aux_vars().clone(),
-            type_annotations: spec
-                .type_annotations()
-                .iter()
-                .map(|(name, ty)| (name.clone(), format!("{ty:?}")))
-                .collect(),
-        }
-    }
-
-    pub fn input_vars(&self) -> &BTreeSet<trustworthiness_checker::VarName> {
-        &self.input_vars
-    }
-
-    pub fn output_vars(&self) -> &BTreeSet<trustworthiness_checker::VarName> {
-        &self.output_vars
-    }
-
-    pub fn aux_vars(&self) -> &BTreeSet<trustworthiness_checker::VarName> {
-        &self.aux_vars
-    }
-
-    pub fn type_annotations(&self) -> &BTreeMap<trustworthiness_checker::VarName, String> {
-        &self.type_annotations
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TypeCheckedSpecification;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct Analysis {
-    pub spec: Option<SpecificationSnapshot>,
-    pub typed: Option<TypeCheckedSpecification>,
+    /// The checker-owned parsed specification. Expression cursors are created
+    /// from this owner only for the duration of an LSP request.
+    pub spec: Option<DsrvSpecification>,
+    /// Keep the real checked specification so type-check status is represented
+    /// by checker data rather than a local marker type.
+    pub typed: Option<CheckedDsrvSpecification>,
     pub diags: Vec<Diagnostic>,
-    pub spanned_nodes: Vec<SpannedExpr>,
+    pub symbol_spans: Vec<SymbolSpan>,
 }
 
 impl Analysis {
     /// Synchronous core of the analysis pipeline.
-    ///
-    /// The checker now owns parsing and expression storage, so the LSP parses
-    /// through its public `parse_str` API and keeps only lightweight node
-    /// snapshots for editor offset lookups. Strict checking is retained for
-    /// documents that contain type annotations; completely untyped documents
-    /// continue to use the LSP's syntax-only behavior.
     pub fn analyze_sync(text: &str) -> Analysis {
         Self::analyse_specification_inner(text)
     }
@@ -97,6 +64,7 @@ impl Analysis {
     }
 
     fn analyse_specification_inner(text: &str) -> Analysis {
+        let symbol_spans = Self::symbol_spans(text);
         let spec = match parse_str(text) {
             Ok(spec) => spec,
             Err(error) => {
@@ -105,15 +73,10 @@ impl Analysis {
                     spec: None,
                     typed: None,
                     diags: vec![Self::parse_diag(text, error)],
-                    spanned_nodes: vec![],
+                    symbol_spans,
                 };
             }
         };
-
-        let spec_snapshot = SpecificationSnapshot::from_checker(&spec);
-        let mut nodes = Vec::new();
-        extract_from_stmts(&spec, text, &mut nodes);
-        log::info!("Extracted spanned nodes: {:#?}", nodes);
 
         if !spec.type_annotations().is_empty() {
             let type_check_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -121,12 +84,12 @@ impl Analysis {
             }));
 
             match type_check_result {
-                Ok(Ok(_typed)) => {
+                Ok(Ok(typed)) => {
                     return Analysis {
-                        spec: Some(spec_snapshot.clone()),
-                        typed: Some(TypeCheckedSpecification),
+                        spec: Some(spec),
+                        typed: Some(typed),
                         diags: vec![],
-                        spanned_nodes: nodes,
+                        symbol_spans,
                     };
                 }
                 Ok(Err(errors)) => {
@@ -139,15 +102,16 @@ impl Analysis {
                         })
                         .collect();
                     return Analysis {
-                        spec: Some(spec_snapshot.clone()),
+                        spec: Some(spec),
                         typed: None,
                         diags,
-                        spanned_nodes: nodes,
+                        symbol_spans,
                     };
                 }
                 Err(panic_payload) => {
-                    // Keep the server alive if the checker encounters a
-                    // feature it cannot yet type-check.
+                    // The checker still has a few features for which strict
+                    // checking can panic. Parsing succeeded, so retain the
+                    // current owner and let editor requests use its syntax.
                     eprintln!(
                         "[dsrv-lsp] type_check panicked (unimplemented feature?): {:?}",
                         panic_payload
@@ -157,11 +121,69 @@ impl Analysis {
         }
 
         Analysis {
-            spec: Some(spec_snapshot),
+            spec: Some(spec),
             typed: None,
             diags: vec![],
-            spanned_nodes: nodes,
+            symbol_spans,
         }
+    }
+
+    fn symbol_spans(source: &str) -> Vec<SymbolSpan> {
+        let tokens = tokenize(source);
+        let mut symbols = Vec::new();
+
+        for (index, token) in tokens.iter().enumerate() {
+            let is_declaration = matches!(
+                token.token,
+                Token::In | Token::Out | Token::Aux | Token::Var
+            );
+            if is_declaration {
+                if let Some(name) = tokens
+                    .get(index + 1)
+                    .filter(|next| next.token == Token::Identifier)
+                {
+                    symbols.push(SymbolSpan {
+                        name: name.content.clone(),
+                        span: Span {
+                            start: token.span.start as u32,
+                            end: name.span.end as u32,
+                        },
+                    });
+                }
+            } else if token.token == Token::Identifier
+                && tokens
+                    .get(index + 1)
+                    .is_some_and(|next| next.token == Token::Eq)
+            {
+                symbols.push(SymbolSpan {
+                    name: token.content.clone(),
+                    span: Span {
+                        start: token.span.start as u32,
+                        end: token.span.end as u32,
+                    },
+                });
+            }
+        }
+
+        symbols.sort_by_key(|symbol| (symbol.span.start, Reverse(symbol.span.end)));
+        symbols
+    }
+
+    /// Return the smallest checker-owned expression span containing `offset`.
+    /// The inclusive boundary behavior matches [`Span::contains_offset`].
+    pub fn node_at_offset(&self, offset: u32) -> Option<ExprRef<'_>> {
+        self.spec
+            .as_ref()?
+            .nodes()
+            .filter(|node| node.span().contains_offset(offset))
+            .min_by_key(|node| node.span().len())
+    }
+
+    pub fn symbol_at_offset(&self, offset: u32) -> Option<&SymbolSpan> {
+        self.symbol_spans
+            .iter()
+            .filter(|symbol| symbol.span.contains_offset(offset))
+            .min_by_key(|symbol| symbol.span.len())
     }
 
     fn semantic_error_message(error: &SemanticError) -> String {
@@ -306,7 +328,7 @@ mod test {
     use super::*;
     use crate::fixtures;
     use macro_rules_attribute::apply;
-    use trustworthiness_checker::async_test;
+    use trustworthiness_checker::{async_test, lang::dsrv::ast::ExprView};
 
     #[apply(async_test)]
     async fn test_analyse_syntax_valid_input_not_typed() {
@@ -337,7 +359,7 @@ mod test {
         assert!(spec.output_vars().is_empty());
         assert!(spec.aux_vars().is_empty());
         assert!(spec.type_annotations().is_empty());
-        assert!(analysis.spanned_nodes.is_empty());
+        assert!(spec.nodes().next().is_none());
     }
 
     #[apply(async_test)]
@@ -436,6 +458,54 @@ z = Struct("value": 1).value"#,
         }
     }
 
+    #[test]
+    fn test_node_at_offset_uses_real_ast_and_inclusive_boundaries() {
+        let source = "out z\nz = x + y";
+        let analysis = Analysis::analyze_sync(source);
+        assert!(
+            analysis.diags.is_empty(),
+            "unexpected diagnostics: {analysis:?}"
+        );
+
+        let x_start = source.find('x').unwrap() as u32;
+        let x_end = x_start + 1;
+        for offset in [x_start, x_end] {
+            let node = analysis.node_at_offset(offset).unwrap();
+            assert!(matches!(node.view(), ExprView::Var(name) if name.name() == "x"));
+        }
+
+        let y_start = source.find('y').unwrap() as u32;
+        let node = analysis.node_at_offset(y_start).unwrap();
+        assert!(matches!(node.view(), ExprView::Var(name) if name.name() == "y"));
+    }
+
+    #[test]
+    fn test_lambdas_and_folds_example() {
+        let source = r#"in samples: List<Int>
+in bias: Int
+out doubled: List<Int>
+out positives: List<Int>
+out sum: Int
+out adjustedSum: Int
+out allPositive: Bool
+
+doubled = List.map(\x: Int -> x * 2, samples)
+positives = List.filter(\x: Int -> x > 0, samples)
+sum = List.fold(\acc: Int, x: Int -> acc + x, 0, samples)
+adjustedSum = (\total: Int -> total + bias)(sum)
+allPositive = List.fold(\acc: Bool, x: Int -> acc && (x > 0), true, samples)
+"#;
+
+        let analysis = Analysis::analyze_sync(source);
+        assert!(
+            analysis.diags.is_empty(),
+            "unexpected diagnostics: {:#?}",
+            analysis.diags
+        );
+        assert!(analysis.spec.is_some());
+        assert!(analysis.typed.is_some());
+    }
+
     #[apply(async_test)]
     async fn test_analyse_untyped_with_comments() {
         let analysis = fixtures::analyse_spec(fixtures::input_untyped_simple_with_comments()).await;
@@ -443,8 +513,9 @@ z = Struct("value": 1).value"#,
             analysis.diags.is_empty(),
             "unexpected diagnostics: {analysis:?}"
         );
-        assert!(analysis.spanned_nodes.len() >= 3);
-        assert!(analysis.spanned_nodes[2].span.start > analysis.spanned_nodes[1].span.end);
+        let symbols = &analysis.symbol_spans;
+        assert!(symbols.len() >= 3);
+        assert!(symbols[2].span.start > symbols[1].span.end);
     }
 
     #[apply(async_test)]
@@ -456,6 +527,6 @@ z = Struct("value": 1).value"#,
             "unexpected diagnostics: {analysis:?}"
         );
         assert!(analysis.spec.is_some());
-        assert!(!analysis.spanned_nodes.is_empty());
+        assert!(analysis.spec.as_ref().unwrap().nodes().next().is_some());
     }
 }

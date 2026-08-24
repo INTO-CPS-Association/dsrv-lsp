@@ -9,6 +9,5 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-pub mod syntax;
 pub mod analyser;
-pub mod pattern_matching;
+pub mod syntax;

@@ -94,7 +94,25 @@ pub fn input_untyped_simple_with_comments() -> &'static str {
 
 #[allow(dead_code)]
 pub fn input_typed_valid_complex() -> &'static str {
-    "in m : Bool\nin a : Bool\nin p : Bool\nin l : Bool\nin e : Bool\nout mout : Bool\nout aout : Bool\nout pout : Bool\nout lout : Bool\nout eout : Bool\nout maple : Bool\nout globallymaple : Bool\nmout = m && !a && !p && !l && !e && default(eout[1], true)\naout = !m && a && !p && !l && !e && default(mout[1], false)\npout = !m && !a && p && !l && !e && default(aout[1], false)\nlout = !m && !a && !p && l && !e && default(pout[1], false)\neout = !m && !a && !p && !l && e && default(lout[1], false)\nmaple = mout || aout || pout || lout || eout\ngloballymaple = maple && default(maple[1], true)"
+    "in m : Bool\nin a : Bool\nin p : Bool\nin l : Bool\nin e : Bool\nout mout : Bool\nout aout : Bool\nout pout : Bool\nout lout : Bool\nout eout : Bool\nout maple : Bool\nout globallymaple : Bool\nmout = m && !a && !p && !l && !e && default(eout[1], true)\naout = !m && a && !p && !l && !e && default(mout[1], false)\npout = !m && !a && !p && !l && !e && default(aout[1], false)\nlout = !m && !a && !p && l && !e && default(pout[1], false)\neout = !m && !a && !p && !l && e && default(lout[1], false)\nmaple = mout || aout || pout || lout || eout\ngloballymaple = maple && default(maple[1], true)"
+}
+
+#[allow(dead_code)]
+pub fn input_lambdas_and_folds() -> &'static str {
+    r#"in samples: List<Int>
+in bias: Int
+out doubled: List<Int>
+out positives: List<Int>
+out sum: Int
+out adjustedSum: Int
+out allPositive: Bool
+
+doubled = List.map(\x: Int -> x * 2, samples)
+positives = List.filter(\x: Int -> x > 0, samples)
+sum = List.fold(\acc: Int, x: Int -> acc + x, 0, samples)
+adjustedSum = (\total: Int -> total + bias)(sum)
+allPositive = List.fold(\acc: Bool, x: Int -> acc && (x > 0), true, samples)
+"#
 }
 // Code snippet from the robosapiens-trustworthiness-checker by the Into-CPS organization under the GPL licence
 #[allow(dead_code)]
@@ -115,91 +133,10 @@ pub fn input_untyped_long_valid_unformatted() -> &'static str {
 }
 
 use tower_lsp_server::{LspService, ls_types};
-use trustworthiness_checker::{core::BinaryOperator, lang::dsrv::ast::Expr};
-
-use crate::lang::pattern_matching::{Literal, SExpr, SpannedExpr};
-use trustworthiness_checker::lang::dsrv::span::Span;
-
-#[allow(dead_code)]
-pub fn input_ast_simple() -> Expr {
-    Expr::BinOp(
-        Box::new(Expr::Val(1)),
-        Box::new(Expr::Val(2)),
-        BinaryOperator::Add,
-    )
-}
-
-#[allow(dead_code)]
-pub fn input_ast_long() -> Expr {
-    Expr::If(
-        Box::new(Expr::Var("x".into())),
-        Box::new(Expr::Default(
-            Box::new(Expr::Val(1)),
-            Box::new(Expr::Val(2)),
-        )),
-        Box::new(Expr::Val(3)),
-    )
-}
 
 #[allow(dead_code)]
 pub fn input_stmts_simple() -> trustworthiness_checker::lang::dsrv::ast::DsrvSpecification {
     input_untyped_valid_simple().parse().unwrap()
-}
-
-#[allow(dead_code)]
-pub fn input_spanned_nodes_simple() -> Vec<SpannedExpr> {
-    vec![
-        SpannedExpr {
-            node: SExpr::Var("x".into()),
-            span: Span { start: 0, end: 4 },
-        },
-        SpannedExpr {
-            node: SExpr::Var("y".into()),
-            span: Span { start: 5, end: 9 },
-        },
-        SpannedExpr {
-            node: SExpr::Var("z".into()),
-            span: Span { start: 10, end: 15 },
-        },
-    ]
-}
-
-#[allow(dead_code)]
-pub fn input_spanned_nodes_complex() -> Vec<SpannedExpr> {
-    vec![
-        SpannedExpr {
-            node: SExpr::Var("x".into()),
-            span: Span { start: 0, end: 4 },
-        },
-        SpannedExpr {
-            node: SExpr::Var("e".into()),
-            span: Span { start: 5, end: 9 },
-        },
-        SpannedExpr {
-            node: SExpr::Var("z".into()),
-            span: Span { start: 10, end: 15 },
-        },
-        SpannedExpr {
-            node: SExpr::Var("z".into()),
-            span: Span { start: 16, end: 17 },
-        },
-        SpannedExpr {
-            node: SExpr::Defer,
-            span: Span { start: 20, end: 42 },
-        },
-        SpannedExpr {
-            node: SExpr::Default,
-            span: Span { start: 26, end: 41 },
-        },
-        SpannedExpr {
-            node: SExpr::Var("e".into()),
-            span: Span { start: 34, end: 35 },
-        },
-        SpannedExpr {
-            node: SExpr::Val(Literal::Other),
-            span: Span { start: 37, end: 40 },
-        },
-    ]
 }
 
 // Code snippet from the robosapiens-trustworthiness-checker by the Into-CPS organization under the GPL licence

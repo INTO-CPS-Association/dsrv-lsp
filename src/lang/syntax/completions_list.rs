@@ -72,21 +72,29 @@ mod test {
             detail: "dynamic(ψ [, type])",
             documentation: "Dynamic property which evaluates a stream of strings, ψ or is `deferred (⊥)` if none has been sent. \n\n Optionally takes a type annotation (e.g, `, Int`) to ensure the dynamically generated stream matches the expected type.",
         };
-        
+
         println!("Retrieved built-in: {:?}", dsrv);
-        
-        assert_eq!(dsrv.unwrap(), result, "Expected to retrieve the 'dynamic' built-in function, but got: {:?}", dsrv);
+
+        assert_eq!(
+            dsrv.unwrap(),
+            result,
+            "Expected to retrieve the 'dynamic' built-in function, but got: {:?}",
+            dsrv
+        );
     }
-    
+
     #[test]
     fn test_get_builtin_empty() {
-      let input = fixtures::input_empty();
-      
-      let dsrv = get_builtin_by_label(input);
-      
-      println!("Retrieved built-in: {:?}", dsrv);
-      
-      assert!(dsrv.is_none(), "Expected to retrieve None for an empty label, but got: {:?}", dsrv);
-      
+        let input = fixtures::input_empty();
+
+        let dsrv = get_builtin_by_label(input);
+
+        println!("Retrieved built-in: {:?}", dsrv);
+
+        assert!(
+            dsrv.is_none(),
+            "Expected to retrieve None for an empty label, but got: {:?}",
+            dsrv
+        );
     }
 }

@@ -6,7 +6,6 @@ version = 4
 name = "DSRV-lsp"
 version = "0.1.0"
 dependencies = [
- "contiguous-tree",
  "dashmap",
  "ecow 0.2.6",
  "log",
@@ -491,7 +490,7 @@ dependencies = [
 [[package]]
 name = "contiguous-tree"
 version = "0.1.0"
-source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker#0254515f7ce0584fc5462a689dc101a7ef1dc8ca"
+source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=b1788d7#b1788d77be3a3a7233b1a044f74cc1501171a3f0"
 dependencies = [
  "contiguous-tree-macros",
  "serde",
@@ -500,7 +499,7 @@ dependencies = [
 [[package]]
 name = "contiguous-tree-macros"
 version = "0.1.0"
-source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker#0254515f7ce0584fc5462a689dc101a7ef1dc8ca"
+source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=b1788d7#b1788d77be3a3a7233b1a044f74cc1501171a3f0"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2488,7 +2487,7 @@ dependencies = [
 [[package]]
 name = "trustworthiness_checker"
 version = "0.1.0"
-source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker#0254515f7ce0584fc5462a689dc101a7ef1dc8ca"
+source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=b1788d7#b1788d77be3a3a7233b1a044f74cc1501171a3f0"
 dependencies = [
  "anyhow",
  "approx",

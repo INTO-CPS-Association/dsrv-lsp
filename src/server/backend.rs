@@ -9,19 +9,23 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use crate::lang::analyser::{Analysis, SpecificationSnapshot};
+use std::sync::Arc;
+
+use crate::lang::analyser::Analysis;
 use crate::lang::syntax::completions_list::*;
 use crate::lang::syntax::lexer::*;
 use crate::utils::byte_to_pos;
 use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
-// use tower_lsp::Client;
-// use tower_lsp::lsp_types::*;
 use tower_lsp_server::{Client, ls_types::*};
-use trustworthiness_checker::lang::dsrv::span::Span;
-
-use crate::lang::pattern_matching::{Literal, SExpr};
+use trustworthiness_checker::{
+    VarName,
+    lang::dsrv::{
+        ast::{DsrvSpecification, ExprView, SyntaxLiteral},
+        span::Span,
+    },
+};
 
 macro_rules! documentation {
     ($value:expr) => {
@@ -45,8 +49,9 @@ pub struct Backend {
     pub client: Client,
     // Store the analysis, rope and lexed tokens for each document URI.
     document_map: DashMap<Uri, Rope>,
-    analysis_map: DashMap<Uri, Analysis>,
+    analysis_map: DashMap<Uri, Arc<Analysis>>,
     token_map: DashMap<Uri, Vec<TokenData>>,
+    revision_map: DashMap<Uri, u64>,
 }
 
 // Backend implementation for the language server
@@ -57,49 +62,64 @@ impl Backend {
             document_map: DashMap::new(),
             analysis_map: DashMap::new(),
             token_map: DashMap::new(),
+            revision_map: DashMap::new(),
         }
     }
     pub async fn change(&self, uri: Uri, text: &str) {
         self.logger(format!("Analyzing document `{:?}`", uri), MessageType::INFO)
             .await;
 
-        // If URI is successfully converted to file path, proceed with analysis
+        // Publish the current document and token state before doing the
+        // potentially expensive parse/type-check. Invalidate the previous AST
+        // immediately so requests cannot combine it with the new rope.
+        let revision = {
+            let mut entry = self.revision_map.entry(uri.clone()).or_insert(0);
+            *entry = entry.saturating_add(1);
+            *entry
+        };
         self.document_map.insert(uri.clone(), Rope::from_str(text));
         self.token_map.insert(uri.clone(), tokenize(text));
+        self.analysis_map.remove(&uri);
 
         // Run analysis on a dedicated blocking thread so the tokio runtime stays
         // responsive to hover, completion and other LSP requests while the
         // (potentially slow) parser and type-checker run. `analyze_sync` is a
         // plain synchronous function so it can be called directly from the
         // blocking thread pool without needing `block_on`.
-        //
-        // In test builds the runtime is not tokio-based, so we call the sync
-        // function directly (test inputs are small so the brief block is fine).
         #[cfg(not(test))]
         let analysis = {
             let text_owned = text.to_string();
             tokio::task::spawn_blocking(move || Analysis::analyze_sync(&text_owned))
                 .await
                 .unwrap_or_else(|join_err| {
-                    // spawn_blocking task panicked; catch_unwind inside analyze_sync
-                    // should normally prevent this, but guard here as a last resort.
                     eprintln!("[dsrv-lsp] analysis task panicked: {:?}", join_err);
                     Analysis {
                         spec: None,
                         typed: None,
                         diags: vec![],
-                        spanned_nodes: vec![],
+                        symbol_spans: vec![],
                     }
                 })
         };
 
         #[cfg(test)]
         let analysis = Analysis::analyze_sync(text);
-        let diags = analysis.diags.clone(); // Clone diagnostics to avoid ownership issues when inserting analysis into the map later.
+        // A newer didChange may have completed while this analysis was
+        // running. Never overwrite its AST or diagnostics with an older result.
+        if self
+            .revision_map
+            .get(&uri)
+            .is_none_or(|current| *current != revision)
+        {
+            return;
+        }
 
-        // Only Update the specification if parsing was successful, otherwise keep the previous specification to avoid losing the AST structure and spanned nodes that are needed for providing completion and hover information based on the current position in the document
+        let diags = analysis.diags.clone();
+
         if analysis.spec.is_some() {
-            self.analysis_map.insert(uri.clone(), analysis);
+            self.analysis_map.insert(uri.clone(), Arc::new(analysis));
+        } else {
+            self.analysis_map.remove(&uri);
         }
 
         self.client
@@ -112,111 +132,106 @@ impl Backend {
         let pos = params.text_document_position;
         let uri_key = pos.text_document.uri;
 
-        // To map the offset into byte instead of line and character
-        let rope = self.document_map.get(&uri_key)?;
-        let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+        let pos_offset = {
+            let rope = self.document_map.get(&uri_key)?;
+            pos_to_offset(pos.position, &rope).unwrap_or_default()
+        };
+        let context = {
+            let tokens = self.token_map.get(&uri_key)?;
+            filter_suggestions(pos_offset as usize, tokens.value())
+        };
 
-        // for the tokens to make the context
-        let binding = self.token_map.get(&uri_key)?;
-        let context = filter_suggestions(pos_offset as usize, binding.value());
-        // log::info!(
-        //     "Context for completion at offset {}: {:?}",
-        //     pos_offset,
-        //     context
-        // );
+        let mut items = BUILTIN_REGISTRY
+            .iter()
+            .filter(|builtin| context.iter().any(|c| builtin.trigger_context.contains(c)))
+            .map(create_item)
+            .collect::<Vec<_>>();
 
-        // Vector to collect the completion item fitting in the context
-        let mut items = Vec::new();
-
+        let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
+        let spec = analysis.spec.as_ref()?;
+        let variables = get_all_declared_symbols(spec);
         items.extend(
-            BUILTIN_REGISTRY
+            variables
                 .iter()
-                .filter(|builtin| context.iter().any(|c| builtin.trigger_context.contains(c)))
-                .map(|builtin| create_item(builtin)),
+                .filter(|var| context.iter().any(|c| var.trigger_context.contains(c)))
+                .map(|var| CompletionItem {
+                    label: var.label.clone(),
+                    kind: Some(var.kind),
+                    detail: Some(var.detail.clone()),
+                    ..Default::default()
+                }),
         );
-
-        // For the variables
-        let analysis_ref = self.analysis_map.get(&uri_key)?;
-
-        // Collects and add input, output, aux variables and stream expressions
-        if let Some(spec) = &analysis_ref.value().spec {
-            let variables = get_all_declared_symbols(&spec);
-            items.extend(
-                variables
-                    .iter()
-                    .filter(|var| context.iter().any(|c| var.trigger_context.contains(c)))
-                    .map(|var| CompletionItem {
-                        label: var.label.to_string(),
-                        kind: Some(var.kind),
-                        detail: Some(var.detail.to_string()),
-                        ..Default::default()
-                    }),
-            );
-        }
         Some(items)
     }
 
-    // Uses the spanned nodes in the AST to provide hover information for the symbol at the current position in the document. Including variable and built-in functions.
+    /// Provide hover information from the current owner and transient cursors.
     pub fn provide_hover(&self, params: HoverParams) -> Option<Hover> {
         let pos = params.text_document_position_params;
         let uri_key = pos.text_document.uri;
-
-        let analysis_ref = self.analysis_map.get(&uri_key)?;
-        let analysis = analysis_ref.value();
-
-        let rope = self.document_map.get(&uri_key)?;
+        let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
+        let rope = self.document_map.get(&uri_key)?.clone();
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+        let spec = analysis.spec.as_ref()?;
 
-        let node = Analysis::node_at_offset(&analysis, pos_offset)?;
-        // log::info!("Node at offset {}: {:?}", pos_offset, node);
-
-        // Match the node at the current offset with the corresponding built-in function to provide hover information. If the node is not a built-in function, return None to indicate that no hover information is available for that symbol.
-        //TODO:This will give wrong hover info if the user is hovering over an area that has changed but was never syntactically correct, So the old AST is still present and provides hover information that does not match the current code. Could be solved by comparing with the lexed token map and use that as backup if the AST node does not match the token to still return something
-        // log::info!("node {:?}", node.builtin_label());
-
-        if let Some(label) = node.node.builtin_label() {
-            // Show hover information for true and false literals.
-            if label == "Val" {
-                let value = match node.node {
-                    SExpr::Val(Literal::Bool(value)) => value,
-                    _ => return None,
-                };
-                let builtin = get_builtin_by_label(if value { "true" } else { "false" })?;
-                return Some(create_hover_item(builtin, &node.span, &rope));
-            }
-            let builtin = get_builtin_by_label(label)?;
-            return Some(create_hover_item(builtin, &node.span, &rope));
+        // Declaration and assignment-LHS spans are parser-local. They are
+        // checked before expression nodes so those editor behaviors remain
+        // available without inventing another expression representation.
+        if let Some(symbol) = analysis.symbol_at_offset(pos_offset) {
+            let variable = VarName::new(&symbol.name);
+            return create_variable_hover(spec, &variable, symbol.span, &rope);
         }
 
-        // If the node is not a built-in function, check if it is a variable and provide hover information based on the variable type and whether it is an input, output or aux variable.
-        match &node.node {
-            SExpr::Var(var_name) => {
-                let spec = analysis.spec.as_ref()?;
-                let type_str = spec
-                    .type_annotations()
-                    .get(var_name)
-                    .map(|ty| format!(": {ty}"))
-                    .unwrap_or_default();
-
-                let (stream_kind, stream_text) = if spec.input_vars().contains(var_name) {
-                    ("in", get_builtin_by_label("in")?.documentation)
-                } else if spec.aux_vars().contains(var_name) {
-                    ("aux", get_builtin_by_label("aux")?.documentation)
-                } else if spec.output_vars().contains(var_name) {
-                    ("out", get_builtin_by_label("out")?.documentation)
+        let node = analysis.node_at_offset(pos_offset)?;
+        let span = node.span();
+        let label = match node.view() {
+            ExprView::Var(variable) => {
+                return create_variable_hover(spec, variable, span, &rope);
+            }
+            ExprView::Val(SyntaxLiteral::Bool(value)) => {
+                if *value {
+                    "true"
                 } else {
-                    ("stream", "stream")
-                };
-
-                let info = format!(
-                    "```dsrv\n{} {}{}\n```\n---\n{}",
-                    stream_kind, var_name, type_str, stream_text
-                );
-                Some(create_hover_variable(&info, &node.span, &rope))
+                    "false"
+                }
             }
+            ExprView::Dynamic(..) => "dynamic",
+            ExprView::Defer(..) => "defer",
+            ExprView::Update(..) => "update",
+            ExprView::Default(..) => "default",
+            ExprView::IsDefined(..) => "is_defined",
+            ExprView::When(..) => "when",
+            ExprView::Latch(..) => "latch",
+            ExprView::Init(..) => "init",
+            ExprView::SIndex(..) => "SIndex",
+            ExprView::If(..) => "If then else",
+            ExprView::MonitoredAt(..) => "Monitored_at",
+            ExprView::Dist(..) => "dist",
+            ExprView::List(..) => "List.",
+            ExprView::LIndex(..) => "List.get",
+            ExprView::LAppend(..) => "List.append",
+            ExprView::LConcat(..) => "List.concat",
+            ExprView::LHead(..) => "List.head",
+            ExprView::LTail(..) => "List.tail",
+            ExprView::LLen(..) => "List.len",
+            ExprView::LMap(..) => "List.map",
+            ExprView::LFilter(..) => "List.filter",
+            ExprView::LFold(..) => "List.fold",
+            ExprView::Map(..) => "Map.",
+            ExprView::MGet(..) => "Map.get",
+            ExprView::MInsert(..) => "Map.insert",
+            ExprView::MRemove(..) => "Map.remove",
+            ExprView::MHasKey(..) => "Map.has_key",
+            ExprView::Sin(..) => "sin",
+            ExprView::Cos(..) => "cos",
+            ExprView::Tan(..) => "tan",
+            ExprView::Abs(..) => "abs",
+            ExprView::Not(..) => "Not",
+            ExprView::Neg(..) => "Neg",
+            _ => return None,
+        };
 
-            _ => None,
-        }
+        let builtin = get_builtin_by_label(label)?;
+        Some(create_hover_item(builtin, &span, &rope))
     }
 
     // Helper function to create diagnostics from error message and range
@@ -236,12 +251,12 @@ pub struct Variables {
 
 // TODO: Add support for typed variables to be able to provide type information in the completion items.
 // Convert specification items into completion items for autocompletion
-fn get_all_declared_symbols(spec: &SpecificationSnapshot) -> Vec<Variables> {
+fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
     let mut items = Vec::new();
 
     for name in spec.input_vars() {
         let item = Variables {
-            label: name.into(),
+            label: name.name(),
             kind: CompletionItemKind::VARIABLE,
             trigger_context: &["expr", "input_stream", "variable"],
             type_anno: None,
@@ -251,7 +266,7 @@ fn get_all_declared_symbols(spec: &SpecificationSnapshot) -> Vec<Variables> {
     }
     for name in spec.aux_vars() {
         let item = Variables {
-            label: name.into(),
+            label: name.name(),
             kind: CompletionItemKind::VARIABLE,
             trigger_context: &["expr", "aux_stream", "variable"],
             type_anno: None,
@@ -263,7 +278,7 @@ fn get_all_declared_symbols(spec: &SpecificationSnapshot) -> Vec<Variables> {
         // Auxiliary variables have their own completion detail and should not be duplicated as outputs.
         if !spec.aux_vars().contains(name) {
             let item = Variables {
-                label: name.into(),
+                label: name.name(),
                 kind: CompletionItemKind::VARIABLE,
                 trigger_context: &["expr", "output_stream", "variable"],
                 type_anno: None,
@@ -303,6 +318,35 @@ fn create_hover_item(item: &DsrvBuiltIn, span: &Span, rope: &Rope) -> Hover {
     }
 }
 
+fn create_variable_hover(
+    spec: &DsrvSpecification,
+    variable: &VarName,
+    span: Span,
+    rope: &Rope,
+) -> Option<Hover> {
+    let type_str = spec
+        .type_annotation(variable)
+        .map(|ty| format!(": {ty}"))
+        .unwrap_or_default();
+    let (stream_kind, stream_text) = if spec.input_vars().contains(variable) {
+        ("in", get_builtin_by_label("in")?.documentation)
+    } else if spec.aux_vars().contains(variable) {
+        ("aux", get_builtin_by_label("aux")?.documentation)
+    } else if spec.output_vars().contains(variable) {
+        ("out", get_builtin_by_label("out")?.documentation)
+    } else {
+        ("stream", "stream")
+    };
+    let info = format!(
+        "```dsrv\n{} {}{}\n```\n---\n{}",
+        stream_kind,
+        variable.name(),
+        type_str,
+        stream_text
+    );
+    Some(create_hover_variable(&info, &span, rope))
+}
+
 fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
     let content = hover_doc!(s);
     Hover {
@@ -311,52 +355,6 @@ fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
             byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
             byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
         )),
-    }
-}
-
-pub trait SExprHoverExt {
-    fn builtin_label(&self) -> Option<&'static str>;
-}
-
-impl SExprHoverExt for SExpr {
-    fn builtin_label(&self) -> Option<&'static str> {
-        match self {
-            SExpr::Dynamic => Some("dynamic"),
-            SExpr::Defer => Some("defer"),
-            SExpr::Update => Some("update"),
-            SExpr::Default => Some("default"),
-            SExpr::IsDefined => Some("is_defined"),
-            SExpr::When => Some("when"),
-            SExpr::Latch => Some("latch"),
-            SExpr::Init => Some("init"),
-            SExpr::SIndex => Some("SIndex"),
-            SExpr::If => Some("If then else"),
-            SExpr::MonitoredAt => Some("Monitored_at"),
-            SExpr::Dist => Some("dist"),
-            SExpr::List => Some("List."),
-            SExpr::LIndex => Some("List.get"),
-            SExpr::LAppend => Some("List.append"),
-            SExpr::LConcat => Some("List.concat"),
-            SExpr::LHead => Some("List.head"),
-            SExpr::LTail => Some("List.tail"),
-            SExpr::LLen => Some("List.len"),
-            SExpr::LMap => Some("List.map"),
-            SExpr::LFilter => Some("List.filter"),
-            SExpr::LFold => Some("List.fold"),
-            SExpr::Map => Some("Map."),
-            SExpr::MGet => Some("Map.get"),
-            SExpr::MInsert => Some("Map.insert"),
-            SExpr::MRemove => Some("Map.remove"),
-            SExpr::MHasKey => Some("Map.has_key"),
-            SExpr::Sin => Some("sin"),
-            SExpr::Cos => Some("cos"),
-            SExpr::Tan => Some("tan"),
-            SExpr::Abs => Some("abs"),
-            SExpr::Not => Some("Not"),
-            SExpr::Neg => Some("Neg"),
-            SExpr::Val(..) => Some("Val"),
-            _ => None,
-        }
     }
 }
 
@@ -871,30 +869,113 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn test_builtin_label() {
-        let nodes = fixtures::input_spanned_nodes_complex();
+    async fn test_lambdas_and_folds_completion_and_hover() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        let text = fixtures::input_lambdas_and_folds();
 
-        assert!(nodes.len() > 0, "Expected spanned nodes, found none");
+        backend.change(uri.clone(), text).await;
 
-        println!("Spanned nodes: {:#?}", nodes);
-
-        // let node = &nodes[4];
-        // println!("Node: {:?}", node);
-
-        let label = &nodes[4].node.builtin_label().unwrap();
-        println!("Builtin label for node: {:?}", label);
+        let map_line = text.lines().nth(8).unwrap();
+        let completion = backend
+            .get_completion(CompletionParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: Position {
+                        line: 8,
+                        character: (map_line.find("x *").unwrap() + 3) as u32,
+                    },
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+                context: None,
+            })
+            .expect("valid lambda document should have completion results");
         assert!(
-            label == &"defer",
-            "Expected builtin label `defer`, found `{}`",
-            label
+            completion.iter().any(|item| item.label == "samples"),
+            "variable completion lost the real specification: {completion:#?}"
         );
 
-        let label = &nodes[5].node.builtin_label().unwrap();
-        println!("Builtin label for node: {:?}", label);
+        let map_start = map_line.find("List.map").unwrap() as u32;
+        let map_hover = backend.provide_hover(HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(8, map_start),
+            },
+            work_done_progress_params: Default::default(),
+        });
+        let Some(Hover {
+            contents: HoverContents::Markup(contents),
+            ..
+        }) = map_hover
+        else {
+            panic!("expected List.map hover information");
+        };
+        assert!(contents.value.contains("List.map"));
+
+        let samples_start = map_line.find("samples").unwrap() as u32;
+        let samples_hover = backend.provide_hover(HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position::new(8, samples_start),
+            },
+            work_done_progress_params: Default::default(),
+        });
+        let Some(Hover {
+            contents: HoverContents::Markup(contents),
+            ..
+        }) = samples_hover
+        else {
+            panic!("expected lambda expression variable hover information");
+        };
+        assert!(contents.value.contains("in samples: List<Int>"));
+    }
+
+    #[apply(async_test)]
+    async fn test_parse_failure_replaces_previous_analysis() {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        let valid = fixtures::input_untyped_valid_simple();
+        let invalid = fixtures::input_untyped_invalid_simple();
+
+        backend.change(uri.clone(), valid).await;
+        let valid_hover = backend.provide_hover(HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(0, 3),
+            },
+            work_done_progress_params: Default::default(),
+        });
+        assert!(valid_hover.is_some());
+
+        backend.change(uri.clone(), invalid).await;
+        assert!(!backend.analysis_map.contains_key(&uri));
         assert!(
-            label == &"default",
-            "Expected builtin label `default`, found `{}`",
-            label
+            backend
+                .provide_hover(HoverParams {
+                    text_document_position_params: TextDocumentPositionParams {
+                        text_document: TextDocumentIdentifier { uri: uri.clone() },
+                        position: Position::new(0, 3),
+                    },
+                    work_done_progress_params: Default::default(),
+                })
+                .is_none()
         );
+        assert!(
+            backend
+                .get_completion(CompletionParams {
+                    text_document_position: TextDocumentPositionParams {
+                        text_document: TextDocumentIdentifier { uri: uri.clone() },
+                        position: Position::new(2, 3),
+                    },
+                    work_done_progress_params: Default::default(),
+                    partial_result_params: Default::default(),
+                    context: None,
+                })
+                .is_none()
+        );
+        assert_eq!(backend.document_map.get(&uri).unwrap().to_string(), invalid);
     }
 }
