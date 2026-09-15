@@ -114,7 +114,14 @@ impl Backend {
             return;
         }
 
-        let diags = analysis.diags.clone();
+        let mut diags = analysis.diags.clone();
+        for diagnostic in &mut diags {
+            if let Some(related) = &mut diagnostic.related_information {
+                for information in related {
+                    information.location.uri = uri.clone();
+                }
+            }
+        }
 
         if analysis.spec.is_some() {
             self.analysis_map.insert(uri.clone(), Arc::new(analysis));
@@ -930,6 +937,44 @@ mod test {
             panic!("expected lambda expression variable hover information");
         };
         assert!(contents.value.contains("in samples: List<Int>"));
+    }
+
+    #[apply(async_test)]
+    async fn semantic_errors_keep_hover_and_completion_available() {
+        for text in [
+            "in x\nin x\nout y\ny = x",
+            "in shared\nout shared\nshared = 1",
+        ] {
+            let service = fixtures::create_LSP_service();
+            let backend = service.inner();
+            let uri = fixtures::create_URI_path();
+            backend.change(uri.clone(), text).await;
+
+            assert!(
+                backend
+                    .provide_hover(HoverParams {
+                        text_document_position_params: TextDocumentPositionParams {
+                            text_document: TextDocumentIdentifier { uri: uri.clone() },
+                            position: Position::new(0, 3),
+                        },
+                        work_done_progress_params: Default::default(),
+                    })
+                    .is_some(),
+                "semantic failure removed declaration hover for {text:?}"
+            );
+            let completion = backend
+                .get_completion(CompletionParams {
+                    text_document_position: TextDocumentPositionParams {
+                        text_document: TextDocumentIdentifier { uri },
+                        position: Position::new(3.min(text.lines().count() as u32 - 1), 4),
+                    },
+                    work_done_progress_params: Default::default(),
+                    partial_result_params: Default::default(),
+                    context: None,
+                })
+                .expect("semantic failure should retain completion");
+            assert!(!completion.is_empty());
+        }
     }
 
     #[apply(async_test)]

@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "DSRV-lsp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dashmap",
  "ecow 0.2.6",
@@ -450,15 +450,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
-name = "cmake"
-version = "0.1.57"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75443c44cd6b379beb8c5b45d85d0773baf31cce901fe7bb252f4eff3008ef7d"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -490,7 +481,7 @@ dependencies = [
 [[package]]
 name = "contiguous-tree"
 version = "0.1.0"
-source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=b1788d7#b1788d77be3a3a7233b1a044f74cc1501171a3f0"
+source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=227b2cc9#227b2cc977fd23de57748a10e504e515188a9127"
 dependencies = [
  "contiguous-tree-macros",
  "serde",
@@ -499,7 +490,7 @@ dependencies = [
 [[package]]
 name = "contiguous-tree-macros"
 version = "0.1.0"
-source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=b1788d7#b1788d77be3a3a7233b1a044f74cc1501171a3f0"
+source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=227b2cc9#227b2cc977fd23de57748a10e504e515188a9127"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -858,12 +849,6 @@ name = "futures-task"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd"
-
-[[package]]
-name = "futures-timer"
-version = "3.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f288b0a4f20f9a56b5d1da57e2227c661b7b16168e2f72365f57b63326e29b24"
 
 [[package]]
 name = "futures-util"
@@ -1391,50 +1376,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
-name = "openssl-sys"
-version = "0.9.112"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57d55af3b3e226502be1526dfdba67ab0e9c96fc293004e79576b2b9edb0dbdb"
-dependencies = [
- "cc",
- "libc",
- "pkg-config",
- "vcpkg",
-]
-
-[[package]]
 name = "ordered-float"
 version = "5.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c7c9e0d9b23589f26070720bac724174bfec1083e82f7854cdd0267518343c0"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "paho-mqtt"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23c6e899549be260b8c8d7fb6908d72eacb9a1e10229c7e294a7a8ff1c768620"
-dependencies = [
- "async-channel",
- "crossbeam-channel",
- "futures",
- "futures-timer",
- "libc",
- "log",
- "paho-mqtt-sys",
- "thiserror",
-]
-
-[[package]]
-name = "paho-mqtt-sys"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00e508bdadfa0d58d67792060fa447ec20729db5dc76e3dc7de9f4d29e521a43"
-dependencies = [
- "cmake",
- "openssl-sys",
 ]
 
 [[package]]
@@ -1522,12 +1469,6 @@ dependencies = [
  "fastrand",
  "futures-io",
 ]
-
-[[package]]
-name = "pkg-config"
-version = "0.3.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "polling"
@@ -2487,7 +2428,7 @@ dependencies = [
 [[package]]
 name = "trustworthiness_checker"
 version = "0.1.0"
-source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=b1788d7#b1788d77be3a3a7233b1a044f74cc1501171a3f0"
+source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=227b2cc9#227b2cc977fd23de57748a10e504e515188a9127"
 dependencies = [
  "anyhow",
  "approx",
@@ -2512,7 +2453,6 @@ dependencies = [
  "macro_rules_attribute",
  "mstlo",
  "ordered-float",
- "paho-mqtt",
  "petgraph",
  "rand 0.10.2",
  "redis",
@@ -2614,12 +2554,6 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
-
-[[package]]
-name = "vcpkg"
-version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "version_check"
