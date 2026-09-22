@@ -1,6 +1,59 @@
-# Language Server
-This is the Rust language server for the DSRV language extension. The server is responsible for providing language features such as code completion, diagnostics, and hover information to the client. It utilizes the `tower-lsp-server` crate to facilitate communication with the client and to implement the language server protocol. 
+# DSRV Language Server
 
-The main entry point for the server is the `main` function, which initializes the server and starts listening for incoming requests from the client. The server implements various methods to handle different types of requests, such as `initialize`, `shutdown`, and `textDocument/didOpen`.
+`dsrv-lsp` is the language server for the DSRV langauge. It implements the Language Server Protocol using the [`tower-lsp-server`](https://crates.io/crates/tower-lsp-server) crate, and is the component behind the language features of the [DSRV VS Code extension](https://github.com/INTO-CPS-Association/dsrv-vscode).
 
-The server manages the state of the language features and interacts with the underlying DSRV language processing logic to provide accurate and efficient responses to the client's requests. To compile the server for the extension host, run `cargo build` (the default debug profile). Run `cargo test` to execute the language-server test suite.
+For how to install and configure the extension, see [Editor Support](https://into-cps-association.github.io/robosapiens-trustworthiness-checker/features/editor-support.html) in the Trustworthiness Checker documentation.
+
+## What it provides
+
+| Feature | Notes |
+|---|---|
+| Completion | Keywords and built-in functions; not yet context-aware |
+| Diagnostics | Syntax and type errors, reported as the document is edited |
+| Hover | Information about the symbol under the cursor |
+
+## Relationship to the Trustworthiness Checker
+
+The server depends on the [Trustworthiness Checker](https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker) as a library and reuses its parser and type checker, so the diagnostics shown in an editor come from the same language definition the checker evaluates.
+
+That dependency is pinned to a specific revision in `Cargo.toml`, and the pin is moved deliberately rather than automatically, so that each update can be tested against the server before it is released. Two consequences follow:
+
+- the server does not need rebuilding for every checker change; only for changes to the language definition or the type checker;
+- between updates, the checker may accept a program the server flags, or the reverse. When diagnostics and a run disagree, the pin is the first thing to check.
+
+## Build
+
+Requires Rust 1.95 or newer, inherited from the checker's minimum supported version.
+
+```sh
+# development
+cargo build
+
+# release
+cargo build --release
+```
+
+The executable is written to `target/debug/dsrv-lsp` or `target/release/dsrv-lsp`. Point the extension's `DSRV.lspPath` setting at it, or place it on `PATH`.
+
+The crate also builds a library (`dsrv_lsp`), so the analysis layer can be used outside the server.
+
+### A self-contained library
+
+For distribution, build against musl to produce an executable with no runtime dependency on system libraries:
+
+```sh
+rustup target add x86_64-unknown-linux-musl
+cargo build --release --target x86_64-unknown-linux-musl
+```
+
+`ldd target/x86_64-unknown-linux-musl/release/dsrv-lsp` reports `statically linked` for such a build. No C toolchain is requried.
+
+## Tests
+
+```sh
+cargo test
+```
+
+## License
+
+This project is licensed under GPL-3.0-only. See the `Cargo.toml` package metadata for details.
