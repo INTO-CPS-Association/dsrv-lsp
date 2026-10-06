@@ -34,73 +34,73 @@ jobs:
             vsix-target: darwin-x64
             can-run: false
 
-        steps:
-          - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-          - name: Install the pinned toolchain
-            shell: bash
-            run: |
-              rustup toolchain install 1.95 --profile minimal
-              rustup target add ${{ matrix.rust-target }} --toolchain 1.95
+      - name: Install the pinned toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.95 --profile minimal
+          rustup target add ${{ matrix.rust-target }} --toolchain 1.95
 
-          - name: Cache the Cargo registry and build directory
-            uses: actions/cache@v4
-            with:
-              path: |
-                ~/.cargo/registry/index
-                ~/.cargo/registry/cache
-                ~/.cargo/git/db
-                target
-              key: cargo-${{ runner.os }}-${{ matrix.rust-target }}-${{ hashFiles('Cargo.lock') }}
-              restore-keys: |
-                cargo-${{ runner.os }}-${{ matrix.rust-target }}-
+      - name: Cache the Cargo registry and build directory
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ matrix.rust-target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ matrix.rust-target }}-
 
-          - name: Build
-            shell: bash
-            run: cargo +1.95 build --release --locked --target ${{ matrix.rust-target }}
+      - name: Build
+        shell: bash
+        run: cargo +1.95 build --release --locked --target ${{ matrix.rust-target }}
 
-          - name: Test
-            if: matrix.can-run
-            shell: bash
-            run: cargo +1.95 test --release --locked --target ${{ matrix.rust-target }}
+      - name: Test
+        if: matrix.can-run
+        shell: bash
+        run: cargo +1.95 test --release --locked --target ${{ matrix.rust-target }}
 
-          - name: Name the asset after its VSIX target
-            shell: bash
-            run: |
-              src="target/${{ matrix.rust-target }}/release/dsrv-lsp"
-              out="dsrv-lsp-${{ matrix.vsix-target }}"
-              if [ "${{ runner.os }}" = "Windows" ]; then
-                src="${src}.exe"
-                out="${out}.exe"
-              fi
-              mkdir -p dist
-              cp "$src" "dist/$out"
-              echo "ASSET=dist/$out" >> "$GITHUB_ENV"
+      - name: Name the asset after its VSIX target
+        shell: bash
+        run: |
+          src="target/${{ matrix.rust-target }}/release/dsrv-lsp"
+          out="dsrv-lsp-${{ matrix.vsix-target }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            src="${src}.exe"
+            out="${out}.exe"
+          fi
+          mkdir -p dist
+          cp "$src" "dist/$out"
+          echo "ASSET=dist/$out" >> "$GITHUB_ENV"
 
-          - name: Confirm the Linux binary is self-contained
-            if: matrix.vsix-target == 'linux-x64'
-            shell: bash
-            run: |
-              if ldd "$ASSET" 2>&1 | grep -qE "statically linked|not a dynamic executable"; then
-                echo "statically linked"
-              else
-                echo "::error::the linux binary is dynamically linked"
-                ldd "$ASSET" || true
-                exit 1
-              fi
+      - name: Confirm the Linux binary is self-contained
+        if: matrix.vsix-target == 'linux-x64'
+        shell: bash
+        run: |
+          if ldd "$ASSET" 2>&1 | grep -qE "statically linked|not a dynamic executable"; then
+            echo "statically linked"
+          else
+            echo "::error::the linux binary is dynamically linked"
+            ldd "$ASSET" || true
+            exit 1
+          fi
 
-          - uses: actions/upload-artifact@v4
-            with:
-              name: dsrv-lsp-${{ matrix.vsix-target }}
-              path: ${{ env.ASSET }}
-              if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsrv-lsp-${{ matrix.vsix-target }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
 
-          - name: Attach to the release
-            if: startsWith(github.ref, 'refs/tags/v')
-            shell: bash
-            env:
-              GH_TOKEN: ${{ github.token }}
-            run: |
-              gh release create "$GITHUB_REF_NAME" \
-                --title "$GITHUB_REF_NAME" --generate-notes || true
-              gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" --generate-notes || true
+          gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
