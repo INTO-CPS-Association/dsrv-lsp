@@ -19,10 +19,11 @@ use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp_server::{Client, ls_types::*};
+use trustworthiness_checker::core::StreamType;
 use trustworthiness_checker::{
     VarName,
     lang::dsrv::{
-        ast::{DsrvSpecification, ExprView, SyntaxLiteral},
+        ast::{ExprView, SyntaxLiteral},
         span::Span,
     },
 };
@@ -155,8 +156,7 @@ impl Backend {
             .collect::<Vec<_>>();
 
         let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
-        let spec = analysis.spec.as_ref()?;
-        let variables = get_all_declared_symbols(spec);
+        let variables = get_all_declared_symbols(&analysis);
         items.extend(
             variables
                 .iter()
@@ -164,7 +164,10 @@ impl Backend {
                 .map(|var| CompletionItem {
                     label: var.label.clone(),
                     kind: Some(var.kind),
-                    detail: Some(var.detail.clone()),
+                    detail: Some(match &var.type_anno {
+                        Some(ty) => format!("{ty} · {}", var.detail),
+                        None => var.detail.clone(),
+                    }),
                     ..Default::default()
                 }),
         );
@@ -178,21 +181,20 @@ impl Backend {
         let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
         let rope = self.document_map.get(&uri_key)?.clone();
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
-        let spec = analysis.spec.as_ref()?;
 
         // Declaration and assignment-LHS spans are parser-local. They are
         // checked before expression nodes so those editor behaviors remain
         // available without inventing another expression representation.
         if let Some(symbol) = analysis.symbol_at_offset(pos_offset) {
             let variable = VarName::new(&symbol.name);
-            return create_variable_hover(spec, &variable, symbol.span, &rope);
+            return create_variable_hover(&analysis, &variable, symbol.span, &rope);
         }
 
         let node = analysis.node_at_offset(pos_offset)?;
         let span = node.span();
         let label = match node.view() {
             ExprView::Var(variable) => {
-                return create_variable_hover(spec, variable, span, &rope);
+                return create_variable_hover(&analysis, variable, span, &rope);
             }
             ExprView::Val(SyntaxLiteral::Bool(value)) => {
                 if *value {
@@ -256,9 +258,49 @@ pub struct Variables {
     pub detail: String,
 }
 
-// TODO: Add support for typed variables to be able to provide type information in the completion items.
+enum VariableType {
+    Annotated(String),
+    Inferred(String),
+    Unknown,
+}
+
+fn variable_type(analysis: &Analysis, variable: &VarName) -> VariableType {
+    if let Some(annotated) = analysis
+        .spec
+        .as_ref()
+        .and_then(|spec| spec.type_annotation(variable))
+    {
+        return VariableType::Annotated(annotated.to_string());
+    }
+
+    if let Some(inferred) = analysis
+        .typed
+        .as_ref()
+        .and_then(|typed| typed.type_annotation(variable))
+    {
+        if !matches!(inferred, StreamType::Any) {
+            return VariableType::Inferred(inferred.to_string());
+        }
+    }
+
+    VariableType::Unknown
+}
+
+impl VariableType {
+    fn name(&self) -> Option<&str> {
+        match self {
+            VariableType::Annotated(ty) | VariableType::Inferred(ty) => Some(ty),
+            VariableType::Unknown => None,
+        }
+    }
+}
+
 // Convert specification items into completion items for autocompletion
-fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
+fn get_all_declared_symbols(analysis: &Analysis) -> Vec<Variables> {
+    let Some(spec) = analysis.spec.as_ref() else {
+        return Vec::new();
+    };
+
     let mut items = Vec::new();
 
     for name in spec.input_vars() {
@@ -266,7 +308,7 @@ fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
             label: name.name(),
             kind: CompletionItemKind::VARIABLE,
             trigger_context: &["expr", "input_stream", "variable"],
-            type_anno: None,
+            type_anno: variable_type(analysis, name).name().map(str::to_owned),
             detail: "Input Stream".to_string(),
         };
         items.push(item);
@@ -276,7 +318,7 @@ fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
             label: name.name(),
             kind: CompletionItemKind::VARIABLE,
             trigger_context: &["expr", "aux_stream", "variable"],
-            type_anno: None,
+            type_anno: variable_type(analysis, name).name().map(str::to_owned),
             detail: "Auxiliary internal stream variable".to_string(),
         };
         items.push(item);
@@ -288,7 +330,7 @@ fn get_all_declared_symbols(spec: &DsrvSpecification) -> Vec<Variables> {
                 label: name.name(),
                 kind: CompletionItemKind::VARIABLE,
                 trigger_context: &["expr", "output_stream", "variable"],
-                type_anno: None,
+                type_anno: variable_type(analysis, name).name().map(str::to_owned),
                 detail: "Output Stream".to_string(),
             };
             items.push(item);
@@ -326,15 +368,20 @@ fn create_hover_item(item: &DsrvBuiltIn, span: &Span, rope: &Rope) -> Hover {
 }
 
 fn create_variable_hover(
-    spec: &DsrvSpecification,
+    analysis: &Analysis,
     variable: &VarName,
     span: Span,
     rope: &Rope,
 ) -> Option<Hover> {
-    let type_str = spec
-        .type_annotation(variable)
+    let spec = analysis.spec.as_ref()?;
+
+    let resolved = variable_type(analysis, variable);
+    let type_str = resolved
+        .name()
         .map(|ty| format!(": {ty}"))
         .unwrap_or_default();
+
+
     let (stream_kind, stream_text) = if spec.input_vars().contains(variable) {
         ("in", get_builtin_by_label("in")?.documentation)
     } else if spec.aux_vars().contains(variable) {
@@ -344,13 +391,19 @@ fn create_variable_hover(
     } else {
         ("stream", "stream")
     };
-    let info = format!(
+
+    let mut info = format!(
         "```dsrv\n{} {}{}\n```\n---\n{}",
         stream_kind,
         variable.name(),
         type_str,
         stream_text
     );
+
+    if matches!(resolved, VariableType::Inferred(_)) {
+        info.push_str("\n\n*Type inferred; not written in the source.*");
+    }
+
     Some(create_hover_variable(&info, &span, rope))
 }
 
@@ -374,13 +427,42 @@ mod test {
 
     use super::*;
 
+    fn position_of(text: &str, needle: &str) -> Position {
+        let offset = text.find(needle).expect("needle occurs in the fixture");
+        let before = &text[..offset];
+        let line_start = before.rfind('\n').map_or(0, |index| index + 1);
+        Position::new(
+            before.matches('\n').count() as u32,
+            (offset - line_start) as u32,
+        )
+    }
+
+    async fn hover_text_at(text: &str, needle: &str) -> Option<String> {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        backend.change(uri.clone(), text).await;
+
+        let hover = backend.provide_hover(HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: position_of(text, needle),
+            },
+            work_done_progress_params: Default::default(),
+        })?;
+
+        match hover.contents {
+            HoverContents::Markup(markup) => Some(markup.value),
+            _ => None,
+        }
+    }
+
     #[apply(async_test)]
     async fn test_get_all_declared_symbols() {
         let input = fixtures::input_untyped_valid_simple();
         let analysis = fixtures::analyse_spec(input).await;
-        let spec = analysis.spec.expect("Expected a valid specification");
 
-        let vars = get_all_declared_symbols(&spec);
+        let vars = get_all_declared_symbols(&analysis);
 
         println!("Declared symbols: {:#?}", vars);
 
@@ -424,9 +506,8 @@ mod test {
     async fn test_get_all_declared_symbols_complex() {
         let input = fixtures::input_untyped_complex_with_comments();
         let analysis = fixtures::analyse_spec(input).await;
-        let spec = analysis.spec.expect("Expected a valid specification");
 
-        let vars = get_all_declared_symbols(&spec);
+        let vars = get_all_declared_symbols(&analysis);
 
         println!("Declared symbols in complex spec: {:#?}", vars);
 
@@ -1022,5 +1103,61 @@ mod test {
                 .is_none()
         );
         assert_eq!(backend.document_map.get(&uri).unwrap().to_string(), invalid);
+    }
+
+    #[apply(async_test)]
+    async fn hover_shows_an_inferred_type_and_says_it_is_inferred() {
+        let text = fixtures::input_inferred_from_annotated_inputs();
+
+        let value = hover_text_at(text, "value").await.expect("hover on value");
+        assert!(value.contains(": Int"), "{value}");
+        assert!(value.contains("inferred"), "{value}");
+
+        let flags = hover_text_at(text, "flags").await.expect("hover on flags");
+        assert!(flags.contains("List<Bool>"), "{flags}");
+
+        let greeting = hover_text_at(text, "greeting").await.expect("hover on greeting");
+        assert!(greeting.contains(": Str"), "{greeting}");
+    }
+
+    #[apply(async_test)]
+    async fn hover_distinguishes_a_written_annotation_from_an_inferred_type() {
+        let text = fixtures::input_mixed_annotated_and_inferred();
+
+        let annotated = hover_text_at(text, "annotated").await.expect("hover on annotated");
+        assert!(annotated.contains(": Int"), "{annotated}");
+        assert!(!annotated.contains("inferred"), "a written annotation must not be reported as inferred: {annotated}");
+
+        let inferred = hover_text_at(text, "inferred").await.expect("hover on inferred");
+        assert!(inferred.contains(": Int"), "{inferred}");
+        assert!(inferred.contains("inferred"), "{inferred}");
+    }
+
+    #[apply(async_test)]
+    async fn hover_reports_no_type_when_inference_concludes_any() {
+        let text = fixtures::input_untyped_valid_simple();
+
+        let hover = hover_text_at(text, "x").await.expect("hover on x");
+        assert!(!hover.contains("Any"), "an unconstrained stream must not report a type: {hover}");
+        assert!(!hover.contains("inferred"), "{hover}");
+    }
+
+    #[apply(async_test)]
+    async fn a_type_alias_neither_panics_nor_becomes_a_symbol() {
+        let text = fixtures::input_type_alias_and_complex_types();
+        let analysis = Analysis::analyze_sync(text);
+
+        assert!(analysis.spec.is_some());
+        assert!(analysis.typed.is_some(), "unexpected diagnostics: {:?}", analysis.diags);
+        assert!(
+            !analysis
+                .symbol_spans
+                .iter()
+                .any(|symbol| symbol.name == "NestedList"),
+            "a type alias names a type, not a stream, so it is not a symbol here"
+        );
+
+        let nested = hover_text_at(text, "nested_map").await.expect("hover on nested_map");
+        assert!(nested.contains("Map<List<Bool>>"), "{nested}");
     }
 }
