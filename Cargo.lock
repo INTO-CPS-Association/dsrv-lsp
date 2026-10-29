@@ -481,7 +481,7 @@ dependencies = [
 [[package]]
 name = "contiguous-tree"
 version = "0.1.0"
-source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=227b2cc9#227b2cc977fd23de57748a10e504e515188a9127"
+source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=9b2f97a#9b2f97a0604816ac565734d993ce727afd4d37e9"
 dependencies = [
  "contiguous-tree-macros",
  "serde",
@@ -490,7 +490,7 @@ dependencies = [
 [[package]]
 name = "contiguous-tree-macros"
 version = "0.1.0"
-source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=227b2cc9#227b2cc977fd23de57748a10e504e515188a9127"
+source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=9b2f97a#9b2f97a0604816ac565734d993ce727afd4d37e9"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2428,7 +2428,7 @@ dependencies = [
 [[package]]
 name = "trustworthiness_checker"
 version = "0.1.0"
-source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=227b2cc9#227b2cc977fd23de57748a10e504e515188a9127"
+source = "git+https://github.com/INTO-CPS-Association/robosapiens-trustworthiness-checker?rev=9b2f97a#9b2f97a0604816ac565734d993ce727afd4d37e9"
 dependencies = [
  "anyhow",
  "approx",

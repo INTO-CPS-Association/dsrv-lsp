@@ -18,15 +18,11 @@ use crate::{
 use regex::Regex;
 use ropey::Rope;
 use tower_lsp_server::ls_types::*;
-use trustworthiness_checker::lang::dsrv::{
-    DsrvParseError, TypeCheckMode,
-    ast::{
-        CheckedDsrvSpecification, DsrvAstError, DsrvSpecification, ExprRef, Local, SemanticEntry,
-    },
-    parser::parse_str,
-    span::Span,
-    type_checker::SemanticError,
-};
+use trustworthiness_checker::{TypeCheckOptions, lang::dsrv::{
+    DsrvParseError, ast::{
+        CheckedDsrvSpecification, Declaration, DsrvAstError, DsrvSpecification, ExprRef,
+    }, diagnostics::{SemanticError, SemanticWarning}, parser::parse_str, span::Span,
+}};
 
 /// A source symbol whose span is not exposed by the checker AST.
 ///
@@ -46,7 +42,7 @@ pub struct Analysis {
     pub spec: Option<DsrvSpecification>,
     /// Keep the real checked specification so type-check status is represented
     /// by checker data rather than a local marker type.
-    pub typed: Option<CheckedDsrvSpecification<Local>>,
+    pub typed: Option<CheckedDsrvSpecification>,
     pub diags: Vec<Diagnostic>,
     pub symbol_spans: Vec<SymbolSpan>,
 }
@@ -88,31 +84,40 @@ impl Analysis {
             .iter()
             .chain(spec.roots().map(|(name, _)| name))
             .all(|name| spec.type_annotation(name).is_some());
-        let mode = if all_streams_annotated {
-            TypeCheckMode::Strict
+        let options = if all_streams_annotated {
+            TypeCheckOptions::STRICT
         } else {
-            TypeCheckMode::Gradual
+            TypeCheckOptions::GRADUAL
         };
         let symbol_spans = Self::ast_symbol_spans(&spec, &lexer_symbol_spans);
-        let type_check_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            spec.clone()
-                .validate::<Local>()
-                .and_then(|validated| validated.type_check(mode))
+        
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            match spec.clone().validate() {
+                Err(errors) => (Err(errors), Vec::new()),
+                Ok(validated) => validated.check(options).into_parts(),
+            }
         }));
 
-        match type_check_result {
-            Ok(Ok(typed)) => Analysis {
+        match outcome {
+            Ok((Ok(typed), warnings)) => {
+                Analysis {
                 spec: Some(spec),
                 typed: Some(typed),
-                diags: vec![],
+                diags: Self::warning_diags(text, &warnings),
                 symbol_spans,
+                }
             },
-            Ok(Err(errors)) => {
+            Ok((Err(errors), warnings)) => {
                 let rope = Rope::from_str(text);
-                let diags = errors
+                let mut diags: Vec<Diagnostic> = errors
                     .iter()
                     .map(|error| Self::create_semantic_diag(&rope, error))
                     .collect();
+                diags.extend(
+                    warnings
+                        .iter()
+                        .map(|warning| Self::create_warning_diag(&rope, warning)),  
+                );
                 Analysis {
                     spec: Some(spec),
                     typed: None,
@@ -141,15 +146,17 @@ impl Analysis {
         spec: &DsrvSpecification,
         lexer_symbol_spans: &[SymbolSpan],
     ) -> Vec<SymbolSpan> {
-        spec.semantic_entries()
+        spec.declarations()
             .iter()
-            .map(|entry| {
-                let name = entry.name().name();
+            // declarations() includes type aliases, which name a type rather than a
+            // stream and so have no entry here.
+            .filter_map(|entry| {
+                let name = entry.stream()?.name();
                 // Declaration spans are authoritative in the checker AST.
                 // Assignment entries currently cover the whole equation, so
                 // retain the lexer-derived LHS span to avoid swallowing hover
                 // requests for expressions on the right-hand side.
-                let span = if matches!(entry, SemanticEntry::Assignment { .. }) {
+                let span = if matches!(entry, Declaration::Equation { .. }) {
                     lexer_symbol_spans
                         .iter()
                         .find(|symbol| {
@@ -161,7 +168,7 @@ impl Analysis {
                 } else {
                     entry.span()
                 };
-                SymbolSpan { name, span }
+                Some(SymbolSpan { name, span })
             })
             .collect()
     }
@@ -230,26 +237,23 @@ impl Analysis {
                 format!("Duplicate declaration: `{}`", variable.name())
             }
             SemanticError::TypeError(error) => format!("Type error: {}", error.message()),
-            SemanticError::DeferredError(message, _) => format!("Deferred error: {message}"),
-            SemanticError::UndeclaredVariable(message, _) => {
+            SemanticError::DeferredError(message, ..) => format!("Deferred error: {message}"),
+            SemanticError::UndeclaredVariable(message, ..) => {
                 format!("Undeclared variable: {message}")
             }
-            SemanticError::MissingTypeAnnotation(message, _) => {
+            SemanticError::MissingTypeAnnotation(message, ..) => {
                 format!("Missing type annotation: {message}")
             }
-            SemanticError::MissingTypeAscription(message, _) => {
+            SemanticError::MissingTypeAscription(message, ..) => {
                 format!("Missing type ascription: {message}")
             }
-            SemanticError::UnsupportedDistributionConstraint(message, _) => {
-                format!("Unsupported distribution constraint: {message}")
-            }
-            SemanticError::UnsupportedLiteral(message, _) => {
+            SemanticError::UnsupportedLiteral(message, ..) => {
                 format!("Unsupported literal: {message}")
             }
-            SemanticError::UnsupportedExpression(message, _) => {
+            SemanticError::UnsupportedExpression(message, ..) => {
                 format!("Unsupported expression: {message}")
             }
-            SemanticError::InvalidRuntimeScope(message, _) => {
+            SemanticError::InvalidRuntimeScope(message, ..) => {
                 format!("Invalid runtime scope: {message}")
             }
             SemanticError::UnresolvedType(error) => {
@@ -292,12 +296,12 @@ impl Analysis {
                 let range = Self::ast_error_span(ast_error)
                     .map(|span| Self::span_range(text, span))
                     .unwrap_or_else(|| Range::new(position, position));
-                return Self::create_diag(&format!("Syntax error: {ast_error}"), range);
+                return Self::create_diag(&format!("Syntax error: {ast_error}"), range, DiagnosticSeverity::ERROR);
             } else {
                 ("Syntax error: Invalid DSRV syntax", position)
             };
 
-        Self::create_diag(message, Range::new(position, end))
+        Self::create_diag(message, Range::new(position, end), DiagnosticSeverity::ERROR)
     }
 
     fn source_char_at(text: &str, position: Position) -> Option<char> {
@@ -328,7 +332,7 @@ impl Analysis {
 
     fn ast_error_span(error: &DsrvAstError) -> Option<Span> {
         match error {
-            DsrvAstError::DuplicateAssignment { duplicate, .. } => Some(*duplicate),
+            DsrvAstError::DuplicateEquation { duplicate, .. } => Some(*duplicate),
             DsrvAstError::DuplicateExpressionField { .. }
             | DsrvAstError::InvalidExpressionForest(_)
             | DsrvAstError::InvalidExpressionMap(_) => None,
@@ -343,14 +347,38 @@ impl Analysis {
         )
     }
 
-    fn create_diag(msg: &str, range: Range) -> Diagnostic {
+    fn create_diag(msg: &str, range: Range, severity: DiagnosticSeverity) -> Diagnostic {
         Diagnostic {
             range,
-            severity: Some(DiagnosticSeverity::ERROR),
+            severity: Some(severity),
             source: Some("DSRV".into()),
             message: msg.into(),
             ..Default::default()
         }
+    }
+
+    fn warning_diags(text: &str, warnings: &[SemanticWarning]) -> Vec<Diagnostic> {
+        if warnings.is_empty() {
+            return Vec::new();
+        }
+        let rope = Rope::from_str(text);
+        warnings
+            .iter()
+            .map(|warning| Self::create_warning_diag(&rope, warning))
+            .collect()
+    }
+
+    fn create_warning_diag(rope: &Rope, warning: &SemanticWarning) -> Diagnostic {
+        let range = warning
+            .span()
+            .map(|span| Range {
+                start: byte_to_pos(rope, span.start as usize).unwrap_or_default(),
+                end: byte_to_pos(rope, span.end as usize).unwrap_or_default(),
+            })
+            .unwrap_or_default();
+        let mut diagnostic = Self::create_diag(warning.message(), range, DiagnosticSeverity::WARNING);
+        diagnostic.code = Some(NumberOrString::String(warning.code().to_string()));
+        diagnostic
     }
 
     fn create_semantic_diag(rope: &Rope, error: &SemanticError) -> Diagnostic {
@@ -361,7 +389,7 @@ impl Analysis {
                 end: byte_to_pos(rope, span.end as usize).unwrap_or_default(),
             })
             .unwrap_or_default();
-        let mut diagnostic = Self::create_diag(&Self::semantic_error_message(error), range);
+        let mut diagnostic = Self::create_diag(&Self::semantic_error_message(error), range, DiagnosticSeverity::ERROR);
         if let SemanticError::DuplicateDeclaration {
             variable, first, ..
         } = error
@@ -435,8 +463,8 @@ mod test {
         let analysis =
             fixtures::analyse_spec(fixtures::input_untyped_long_valid_unformatted()).await;
         assert!(analysis.spec.is_some());
-        assert!(analysis.typed.is_none());
-        assert!(!analysis.diags.is_empty());
+        assert!(analysis.typed.is_some());
+        assert!(analysis.diags.is_empty());
     }
 
     #[apply(async_test)]
@@ -668,8 +696,8 @@ allPositive = List.fold(\acc: Bool, x: Int -> acc && (x > 0), true, samples)
         let analysis =
             fixtures::analyse_spec(fixtures::input_untyped_complex_with_comments()).await;
         assert!(analysis.spec.is_some());
-        assert!(analysis.typed.is_none());
-        assert!(!analysis.diags.is_empty());
+        assert!(analysis.typed.is_some());
+        assert!(analysis.diags.is_empty());
         assert!(analysis.spec.as_ref().unwrap().nodes().next().is_some());
     }
 }
