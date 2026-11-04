@@ -44,6 +44,8 @@ impl LanguageServer for Backend {
                     ..Default::default()
                 })),
 
+                document_symbol_provider: Some(OneOf::Left(true)),
+
                 // TODO: Add support for definition and declaration providers in the future to enable jumping to definitions and declarations of input and output streams
                 // definition_provider: Some(OneOf::Left(true)),
                 // declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
@@ -93,6 +95,10 @@ impl LanguageServer for Backend {
     // Used the backend to create the hover items for the token at the position of the hover and return it to the client to be displayed in the editor.
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         Ok(self.provide_hover(params))
+    }
+
+    async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
+        Ok(Backend::document_symbols(&self, params))
     }
 }
 

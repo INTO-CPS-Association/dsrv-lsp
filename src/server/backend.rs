@@ -9,6 +9,7 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::lang::analyser::Analysis;
@@ -19,6 +20,7 @@ use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp_server::{Client, ls_types::*};
+use trustworthiness_checker::Declaration;
 use trustworthiness_checker::core::StreamType;
 use trustworthiness_checker::{
     VarName,
@@ -243,6 +245,73 @@ impl Backend {
         Some(create_hover_item(builtin, &span, &rope))
     }
 
+    pub fn document_symbols(&self, params: DocumentSymbolParams) -> Option<DocumentSymbolResponse> {
+        let doc = params.text_document;
+        let uri_key = doc.uri;
+        let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
+        let rope = self.document_map.get(&uri_key)?.clone();
+        let spec = analysis.spec.as_ref()?;
+
+        let mut result: Vec<DocumentSymbol> = Vec::new();
+        let mut vars: HashSet<String> = HashSet::new();
+
+
+        for decl in spec.declarations() {
+            match decl {
+                Declaration::Input { name, .. }
+                | Declaration::Output { name, .. }
+                | Declaration::Aux { name, .. } => { vars.insert(name.name()); },
+                _ => ()
+            }
+        }
+
+        for decl in spec.declarations() {
+            let (name, detail) = match decl {
+                Declaration::Equation { name, .. } => {
+                    if vars.contains(&name.name()) {
+                        continue;
+                    }
+                    (
+                        name.name(),
+                        variable_type(&analysis, name).name().map(str::to_string)
+                    )
+                },
+                Declaration::TypeAlias { name, .. } => {
+                    (name.to_string(), None)
+                },
+                Declaration::Aux { name, .. }
+                | Declaration::Input { name, .. }
+                | Declaration::Output { name, .. } => {
+                    (
+                        name.name(),
+                        variable_type(&analysis, name).name().map(str::to_string)
+                    )
+                }
+            };
+
+            let span = decl.span();
+            let symbol = DocumentSymbol {
+                name,
+                range: Range {
+                    start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
+                    end: byte_to_pos(&rope, span.end as usize).unwrap_or_default()
+                },
+                selection_range: Range {
+                    start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
+                    end: byte_to_pos(&rope, span.end as usize).unwrap_or_default()
+                },
+                kind: role_to_symbol_kind(decl),
+                detail,
+                children: None,
+                deprecated: None,
+                tags: None
+            };
+            result.push(symbol);
+        }
+
+        Some(DocumentSymbolResponse::Nested(result))
+    }
+
     // Helper function to create diagnostics from error message and range
     async fn logger(&self, mes: String, level: MessageType) {
         self.client.log_message(level, mes).await;
@@ -417,6 +486,16 @@ fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
         )),
     }
 }
+
+fn role_to_symbol_kind(decl: &Declaration) -> SymbolKind {
+        match decl {
+            Declaration::Input { .. } => SymbolKind::VARIABLE,
+            Declaration::Output { .. } => SymbolKind::FIELD,
+            Declaration::Aux { .. } => SymbolKind::PROPERTY,
+            Declaration::TypeAlias { .. } => SymbolKind::INTERFACE,
+            Declaration::Equation { .. } => SymbolKind::FUNCTION
+        }
+    }
 
 #[cfg(test)]
 mod test {
