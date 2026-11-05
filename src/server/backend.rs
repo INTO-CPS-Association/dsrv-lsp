@@ -9,6 +9,7 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -246,71 +247,52 @@ impl Backend {
     }
 
     pub fn document_symbols(&self, params: DocumentSymbolParams) -> Option<DocumentSymbolResponse> {
-        let doc = params.text_document;
-        let uri_key = doc.uri;
+        let uri_key = params.text_document.uri;
         let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
         let rope = self.document_map.get(&uri_key)?.clone();
         let spec = analysis.spec.as_ref()?;
 
-        let mut result: Vec<DocumentSymbol> = Vec::new();
-        let mut vars: HashSet<String> = HashSet::new();
+        let mut declared: HashSet<String> = HashSet::new();
+        let mut equations: HashMap<String, &Declaration> = HashMap::new();
 
 
         for decl in spec.declarations() {
             match decl {
                 Declaration::Input { name, .. }
                 | Declaration::Output { name, .. }
-                | Declaration::Aux { name, .. } => { vars.insert(name.name()); },
-                _ => ()
+                | Declaration::Aux { name, .. } => {
+                    declared.insert(name.name());
+                },
+                Declaration::Equation { name, .. } => {
+                    equations.insert(name.name(), decl);
+                },
+                Declaration::TypeAlias { .. } => {}
             }
         }
 
+        let mut result: Vec<DocumentSymbol> = Vec::new();
+
         for decl in spec.declarations() {
-            let (name, detail) = match decl {
-                Declaration::Equation { name, .. } => {
-                    if vars.contains(&name.name()) {
-                        continue;
-                    }
-                    (
-                        name.name(),
-                        variable_type(&analysis, name).name().map(str::to_string)
-                    )
-                },
-                Declaration::TypeAlias { name, .. } => {
-                    (name.to_string(), None)
-                },
-                Declaration::Aux { name, .. }
-                | Declaration::Input { name, .. }
-                | Declaration::Output { name, .. } => {
-                    (
-                        name.name(),
-                        variable_type(&analysis, name).name().map(str::to_string)
-                    )
+            if let Declaration::Equation { name, .. } = decl {
+                if declared.contains(&name.name()) {
+                    continue;
                 }
+            }
+
+            let children = match decl {
+                Declaration::Input { name, .. }
+                | Declaration::Output { name, .. }
+                | Declaration::Aux { name, .. } => equations
+                    .get(&name.name())
+                    .copied()
+                    .map(|equation| {
+                        vec![create_document_symbol(&analysis, &rope, equation, None)]
+                    }),
+                Declaration::Equation { .. }
+                | Declaration::TypeAlias { .. } => None
             };
 
-            let span = decl.span();
-            let name_span = analysis
-                .symbol_spans
-                .iter()
-                .find(|symbol| {
-                    symbol.name == name
-                        && span.contains_offset(symbol.name_span.start)
-                        && span.contains_offset(symbol.name_span.end)  
-                })
-                .map_or(span, |symbol| symbol.name_span);
-
-            let symbol = DocumentSymbol {
-                name,
-                range: span_to_range(&rope, span),
-                selection_range: span_to_range(&rope, name_span),
-                kind: role_to_symbol_kind(decl),
-                detail,
-                children: None,
-                deprecated: None,
-                tags: None
-            };
-            result.push(symbol);
+            result.push(create_document_symbol(&analysis, &rope, decl, children));
         }
 
         Some(DocumentSymbolResponse::Nested(result))
@@ -505,6 +487,47 @@ fn span_to_range(rope: &Rope, span: Span) -> Range {
     Range {
         start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
         end: byte_to_pos(&rope, span.end as usize).unwrap_or_default()
+    }
+}
+
+fn create_document_symbol(
+    analysis: &Analysis,
+    rope: &Rope,
+    decl: &Declaration,
+    children: Option<Vec<DocumentSymbol>>
+) -> DocumentSymbol {
+    let (name, detail) = match decl {
+        Declaration::Aux { name, .. }
+        | Declaration::Input { name, .. }
+        | Declaration::Output { name, .. }
+        | Declaration::Equation { name, .. } => (
+                name.name(),
+                variable_type(analysis, name).name().map(str::to_string),
+        ),
+        Declaration::TypeAlias { name, .. } => (name.to_string(), None),
+    };
+    
+    let span = decl.span();
+
+    let name_span = analysis
+        .symbol_spans
+        .iter()
+        .find(|symbol| {
+            symbol.name == name
+                && span.contains_offset(symbol.name_span.start)
+                && span.contains_offset(symbol.name_span.end)  
+        })
+        .map_or(span, |symbol| symbol.name_span);
+
+     DocumentSymbol {
+        name,
+        range: span_to_range(&rope, span),
+        selection_range: span_to_range(&rope, name_span),
+        kind: role_to_symbol_kind(decl),
+        detail,
+        children,
+        deprecated: None,
+        tags: None
     }
 }
 
