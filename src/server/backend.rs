@@ -9,6 +9,8 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::lang::analyser::Analysis;
@@ -19,6 +21,7 @@ use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp_server::{Client, ls_types::*};
+use trustworthiness_checker::Declaration;
 use trustworthiness_checker::core::StreamType;
 use trustworthiness_checker::{
     VarName,
@@ -243,6 +246,58 @@ impl Backend {
         Some(create_hover_item(builtin, &span, &rope))
     }
 
+    pub fn document_symbols(&self, params: DocumentSymbolParams) -> Option<DocumentSymbolResponse> {
+        let uri_key = params.text_document.uri;
+        let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
+        let rope = self.document_map.get(&uri_key)?.clone();
+        let spec = analysis.spec.as_ref()?;
+
+        let mut declared: HashSet<String> = HashSet::new();
+        let mut equations: HashMap<String, &Declaration> = HashMap::new();
+
+
+        for decl in spec.declarations() {
+            match decl {
+                Declaration::Input { name, .. }
+                | Declaration::Output { name, .. }
+                | Declaration::Aux { name, .. } => {
+                    declared.insert(name.name());
+                },
+                Declaration::Equation { name, .. } => {
+                    equations.insert(name.name(), decl);
+                },
+                Declaration::TypeAlias { .. } => {}
+            }
+        }
+
+        let mut result: Vec<DocumentSymbol> = Vec::new();
+
+        for decl in spec.declarations() {
+            if let Declaration::Equation { name, .. } = decl {
+                if declared.contains(&name.name()) {
+                    continue;
+                }
+            }
+
+            let children = match decl {
+                Declaration::Input { name, .. }
+                | Declaration::Output { name, .. }
+                | Declaration::Aux { name, .. } => equations
+                    .get(&name.name())
+                    .copied()
+                    .map(|equation| {
+                        vec![create_document_symbol(&analysis, &rope, equation, None)]
+                    }),
+                Declaration::Equation { .. }
+                | Declaration::TypeAlias { .. } => None
+            };
+
+            result.push(create_document_symbol(&analysis, &rope, decl, children));
+        }
+
+        Some(DocumentSymbolResponse::Nested(result))
+    }
+
     // Helper function to create diagnostics from error message and range
     async fn logger(&self, mes: String, level: MessageType) {
         self.client.log_message(level, mes).await;
@@ -418,6 +473,64 @@ fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
     }
 }
 
+fn role_to_symbol_kind(decl: &Declaration) -> SymbolKind {
+    match decl {
+        Declaration::Input { .. } => SymbolKind::VARIABLE,
+        Declaration::Output { .. } => SymbolKind::FIELD,
+        Declaration::Aux { .. } => SymbolKind::PROPERTY,
+        Declaration::TypeAlias { .. } => SymbolKind::INTERFACE,
+        Declaration::Equation { .. } => SymbolKind::FUNCTION
+    }
+}
+
+fn span_to_range(rope: &Rope, span: Span) -> Range {
+    Range {
+        start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
+        end: byte_to_pos(&rope, span.end as usize).unwrap_or_default()
+    }
+}
+
+fn create_document_symbol(
+    analysis: &Analysis,
+    rope: &Rope,
+    decl: &Declaration,
+    children: Option<Vec<DocumentSymbol>>
+) -> DocumentSymbol {
+    let (name, detail) = match decl {
+        Declaration::Aux { name, .. }
+        | Declaration::Input { name, .. }
+        | Declaration::Output { name, .. }
+        | Declaration::Equation { name, .. } => (
+                name.name(),
+                variable_type(analysis, name).name().map(str::to_string),
+        ),
+        Declaration::TypeAlias { name, .. } => (name.to_string(), None),
+    };
+    
+    let span = decl.span();
+
+    let name_span = analysis
+        .symbol_spans
+        .iter()
+        .find(|symbol| {
+            symbol.name == name
+                && span.contains_offset(symbol.name_span.start)
+                && span.contains_offset(symbol.name_span.end)  
+        })
+        .map_or(span, |symbol| symbol.name_span);
+
+     DocumentSymbol {
+        name,
+        range: span_to_range(&rope, span),
+        selection_range: span_to_range(&rope, name_span),
+        kind: role_to_symbol_kind(decl),
+        detail,
+        children,
+        deprecated: None,
+        tags: None
+    }
+}
+
 #[cfg(test)]
 mod test {
     use macro_rules_attribute::apply;
@@ -455,6 +568,35 @@ mod test {
             HoverContents::Markup(markup) => Some(markup.value),
             _ => None,
         }
+    }
+
+    async fn outline_of(text: &str) -> Vec<DocumentSymbol> {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        backend.change(uri.clone(), text).await;
+
+        let response = backend.document_symbols(DocumentSymbolParams {
+            text_document: TextDocumentIdentifier { uri },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        });
+
+        match response {
+            Some(DocumentSymbolResponse::Nested(symbols)) => symbols,
+            Some(DocumentSymbolResponse::Flat(_)) => panic!("expected a nested response"),
+            None => panic!("document_symbols returned None: the whole outline was discarded"),
+        }
+    }
+
+    fn named<'a>(symbols: &'a [DocumentSymbol], name: &str) -> &'a DocumentSymbol {
+        symbols
+            .iter()
+            .find(|symbol| symbol.name == name)
+            .unwrap_or_else(|| {
+                let found: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+                panic!("no symbol named {name:?}; found {found:?}")
+            })
     }
 
     #[apply(async_test)]
@@ -1159,5 +1301,69 @@ mod test {
 
         let nested = hover_text_at(text, "nested_map").await.expect("hover on nested_map");
         assert!(nested.contains("Map<List<Bool>>"), "{nested}");
+    }
+
+    #[apply(async_test)]
+    async fn the_outline_has_one_entry_per_stream_in_source_order() {
+        let symbols = outline_of(fixtures::input_typed_valid_simple()).await;
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["x", "y", "z"]);
+    }
+
+    #[apply(async_test)]
+    async fn a_declaration_selects_only_its_name() {
+        let symbols = outline_of(fixtures::input_typed_valid_simple()).await;
+        let x = named(&symbols, "x");
+
+        assert_eq!(x.range.start, Position::new(0, 0));
+        assert_eq!(
+            x.selection_range,
+            Range::new(Position::new(0, 3), Position::new(0, 4))
+        );
+        assert_ne!(x.range, x.selection_range);
+    }
+
+    #[apply(async_test)]
+    async fn an_equation_becomes_a_child_pointing_at_its_own_line() {
+        let symbols = outline_of(fixtures::input_typed_valid_simple()).await;
+        let z = named(&symbols, "z");
+
+        let children = z.children.as_ref().expect("z has its equation as a child");
+        assert_eq!(children.len(), 1);
+
+        let equation = &children[0];
+        assert_eq!(equation.name, "z");
+
+        assert_eq!(z.selection_range.start.line, 2);
+        assert_eq!(equation.selection_range.start.line, 4);
+    }
+
+    #[apply(async_test)]
+    async fn an_equation_with_no_declaration_stands_on_its_own() {
+        let symbols = outline_of("x = 1").await;
+
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "x");
+        assert!(symbols[0].children.is_none());
+    }
+
+    #[apply(async_test)]
+    async fn a_type_alias_appears_and_does_not_discard_the_outline() {
+        let symbols = outline_of(fixtures::input_type_alias_and_complex_types()).await;
+
+        let alias = named(&symbols, "NestedList");
+        assert_eq!(alias.kind, SymbolKind::INTERFACE);
+        assert!(alias.detail.is_none(), "an alias has no stream type");
+
+        assert!(symbols.len() > 1, "the other declarations are still there");
+    }
+
+    #[apply(async_test)]
+    async fn the_outline_shows_inferred_types() {
+        let symbols = outline_of(fixtures::input_inferred_from_annotated_inputs()).await;
+        let value = named(&symbols, "value");
+
+        assert_eq!(value.detail.as_deref(), Some("Int"));
     }
 }
