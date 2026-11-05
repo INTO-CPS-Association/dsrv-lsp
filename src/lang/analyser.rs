@@ -33,6 +33,7 @@ use trustworthiness_checker::{TypeCheckOptions, lang::dsrv::{
 pub struct SymbolSpan {
     pub name: String,
     pub span: Span,
+    pub name_span: Span // span of the declaration name only ("in x" -> 3..4)
 }
 
 #[derive(Clone, Debug)]
@@ -152,23 +153,18 @@ impl Analysis {
             // stream and so have no entry here.
             .filter_map(|entry| {
                 let name = entry.stream()?.name();
-                // Declaration spans are authoritative in the checker AST.
-                // Assignment entries currently cover the whole equation, so
-                // retain the lexer-derived LHS span to avoid swallowing hover
-                // requests for expressions on the right-hand side.
+                let lexer = lexer_symbol_spans.iter().find(|symbol| {
+                    symbol.name == name
+                        && entry.span().contains_offset(symbol.span.start)
+                        && entry.span().contains_offset(symbol.span.end)
+                });
                 let span = if matches!(entry, Declaration::Equation { .. }) {
-                    lexer_symbol_spans
-                        .iter()
-                        .find(|symbol| {
-                            symbol.name == name
-                                && entry.span().contains_offset(symbol.span.start)
-                                && entry.span().contains_offset(symbol.span.end)
-                        })
-                        .map_or_else(|| entry.span(), |symbol| symbol.span)
+                    lexer.map_or_else(|| entry.span(), |symbol| symbol.span)
                 } else {
                     entry.span()
                 };
-                Some(SymbolSpan { name, span })
+                let name_span = lexer.map_or_else(|| entry.span(), |symbol| symbol.name_span);
+                Some(SymbolSpan { name, span, name_span })
             })
             .collect()
     }
@@ -193,6 +189,10 @@ impl Analysis {
                             start: token.span.start as u32,
                             end: name.span.end as u32,
                         },
+                        name_span: Span {
+                            start: name.span.start as u32,
+                            end: name.span.end as u32,
+                        },
                     });
                 }
             } else if token.token == Token::Identifier
@@ -200,12 +200,14 @@ impl Analysis {
                     .get(index + 1)
                     .is_some_and(|next| next.token == Token::Eq)
             {
+                let span = Span {
+                    start: token.span.start as u32,
+                    end: token.span.end as u32,
+                };
                 symbols.push(SymbolSpan {
                     name: token.content.clone(),
-                    span: Span {
-                        start: token.span.start as u32,
-                        end: token.span.end as u32,
-                    },
+                    span,
+                    name_span: span
                 });
             }
         }

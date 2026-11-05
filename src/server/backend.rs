@@ -290,16 +290,20 @@ impl Backend {
             };
 
             let span = decl.span();
+            let name_span = analysis
+                .symbol_spans
+                .iter()
+                .find(|symbol| {
+                    symbol.name == name
+                        && span.contains_offset(symbol.name_span.start)
+                        && span.contains_offset(symbol.name_span.end)  
+                })
+                .map_or(span, |symbol| symbol.name_span);
+
             let symbol = DocumentSymbol {
                 name,
-                range: Range {
-                    start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
-                    end: byte_to_pos(&rope, span.end as usize).unwrap_or_default()
-                },
-                selection_range: Range {
-                    start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
-                    end: byte_to_pos(&rope, span.end as usize).unwrap_or_default()
-                },
+                range: span_to_range(&rope, span),
+                selection_range: span_to_range(&rope, name_span),
                 kind: role_to_symbol_kind(decl),
                 detail,
                 children: None,
@@ -488,14 +492,21 @@ fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
 }
 
 fn role_to_symbol_kind(decl: &Declaration) -> SymbolKind {
-        match decl {
-            Declaration::Input { .. } => SymbolKind::VARIABLE,
-            Declaration::Output { .. } => SymbolKind::FIELD,
-            Declaration::Aux { .. } => SymbolKind::PROPERTY,
-            Declaration::TypeAlias { .. } => SymbolKind::INTERFACE,
-            Declaration::Equation { .. } => SymbolKind::FUNCTION
-        }
+    match decl {
+        Declaration::Input { .. } => SymbolKind::VARIABLE,
+        Declaration::Output { .. } => SymbolKind::FIELD,
+        Declaration::Aux { .. } => SymbolKind::PROPERTY,
+        Declaration::TypeAlias { .. } => SymbolKind::INTERFACE,
+        Declaration::Equation { .. } => SymbolKind::FUNCTION
     }
+}
+
+fn span_to_range(rope: &Rope, span: Span) -> Range {
+    Range {
+        start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
+        end: byte_to_pos(&rope, span.end as usize).unwrap_or_default()
+    }
+}
 
 #[cfg(test)]
 mod test {
