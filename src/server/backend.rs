@@ -570,6 +570,35 @@ mod test {
         }
     }
 
+    async fn outline_of(text: &str) -> Vec<DocumentSymbol> {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        backend.change(uri.clone(), text).await;
+
+        let response = backend.document_symbols(DocumentSymbolParams {
+            text_document: TextDocumentIdentifier { uri },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        });
+
+        match response {
+            Some(DocumentSymbolResponse::Nested(symbols)) => symbols,
+            Some(DocumentSymbolResponse::Flat(_)) => panic!("expected a nested response"),
+            None => panic!("document_symbols returned None: the whole outline was discarded"),
+        }
+    }
+
+    fn named<'a>(symbols: &'a [DocumentSymbol], name: &str) -> &'a DocumentSymbol {
+        symbols
+            .iter()
+            .find(|symbol| symbol.name == name)
+            .unwrap_or_else(|| {
+                let found: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+                panic!("no symbol named {name:?}; found {found:?}")
+            })
+    }
+
     #[apply(async_test)]
     async fn test_get_all_declared_symbols() {
         let input = fixtures::input_untyped_valid_simple();
@@ -1272,5 +1301,69 @@ mod test {
 
         let nested = hover_text_at(text, "nested_map").await.expect("hover on nested_map");
         assert!(nested.contains("Map<List<Bool>>"), "{nested}");
+    }
+
+    #[apply(async_test)]
+    async fn the_outline_has_one_entry_per_stream_in_source_order() {
+        let symbols = outline_of(fixtures::input_typed_valid_simple()).await;
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["x", "y", "z"]);
+    }
+
+    #[apply(async_test)]
+    async fn a_declaration_selects_only_its_name() {
+        let symbols = outline_of(fixtures::input_typed_valid_simple()).await;
+        let x = named(&symbols, "x");
+
+        assert_eq!(x.range.start, Position::new(0, 0));
+        assert_eq!(
+            x.selection_range,
+            Range::new(Position::new(0, 3), Position::new(0, 4))
+        );
+        assert_ne!(x.range, x.selection_range);
+    }
+
+    #[apply(async_test)]
+    async fn an_equation_becomes_a_child_pointing_at_its_own_line() {
+        let symbols = outline_of(fixtures::input_typed_valid_simple()).await;
+        let z = named(&symbols, "z");
+
+        let children = z.children.as_ref().expect("z has its equation as a child");
+        assert_eq!(children.len(), 1);
+
+        let equation = &children[0];
+        assert_eq!(equation.name, "z");
+
+        assert_eq!(z.selection_range.start.line, 2);
+        assert_eq!(equation.selection_range.start.line, 4);
+    }
+
+    #[apply(async_test)]
+    async fn an_equation_with_no_declaration_stands_on_its_own() {
+        let symbols = outline_of("x = 1").await;
+
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "x");
+        assert!(symbols[0].children.is_none());
+    }
+
+    #[apply(async_test)]
+    async fn a_type_alias_appears_and_does_not_discard_the_outline() {
+        let symbols = outline_of(fixtures::input_type_alias_and_complex_types()).await;
+
+        let alias = named(&symbols, "NestedList");
+        assert_eq!(alias.kind, SymbolKind::INTERFACE);
+        assert!(alias.detail.is_none(), "an alias has no stream type");
+
+        assert!(symbols.len() > 1, "the other declarations are still there");
+    }
+
+    #[apply(async_test)]
+    async fn the_outline_shows_inferred_types() {
+        let symbols = outline_of(fixtures::input_inferred_from_annotated_inputs()).await;
+        let value = named(&symbols, "value");
+
+        assert_eq!(value.detail.as_deref(), Some("Int"));
     }
 }
