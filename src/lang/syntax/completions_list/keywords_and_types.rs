@@ -97,15 +97,6 @@ pub static TYPES: &[DsrvBuiltIn] = &[
         documentation: "Unit type representing a pure event or trigger stream. It carries no data payload and is used purely to signal that an event occurred at a specific timestep.",
     },
     DsrvBuiltIn {
-        label: "Any",
-        kind: CompletionItemKind::KEYWORD,
-        trigger_context: &["type"],
-        insert_text: "Any",
-        insert_text_format: InsertTextFormat::PLAIN_TEXT,
-        detail: "Any",
-        documentation: "An unconstrained stream type used by gradual type checking.",
-    },
-    DsrvBuiltIn {
         label: "List",
         kind: CompletionItemKind::KEYWORD,
         trigger_context: &["type"],

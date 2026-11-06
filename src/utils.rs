@@ -48,7 +48,7 @@ mod test {
 
     #[test]
     fn test_byte_to_pos_simple() {
-        let rope = Rope::from_str(fixtures::input_untyped_valid_simple());
+        let rope = Rope::from_str(fixtures::input_missing_annotations_simple());
         println!("Rope content:\n{}", rope);
 
         let pos = byte_to_pos(&rope, 7).unwrap();
@@ -65,7 +65,7 @@ mod test {
 
     #[test]
     fn test_byte_to_pos_complex() {
-        let rope = Rope::from_str(fixtures::input_untyped_complex_with_comments());
+        let rope = Rope::from_str(fixtures::input_complex_missing_annotations());
 
         let pos = byte_to_pos(&rope, 523);
         let result = Position::new(18, 23);
@@ -82,7 +82,7 @@ mod test {
 
     #[test]
     fn test_pos_to_offset_simple() {
-        let rope = Rope::from_str(fixtures::input_untyped_valid_simple());
+        let rope = Rope::from_str(fixtures::input_missing_annotations_simple());
         let pos = Position::new(1, 2); // line 2 (0-based) and column 2 (0-based)
         let offset = pos_to_offset(pos, &rope).unwrap();
         let expected_offset = 7; // 'y' in "in y"
@@ -96,7 +96,7 @@ mod test {
 
     #[test]
     fn test_pos_to_offset_complex() {
-        let rope = Rope::from_str(fixtures::input_untyped_complex_with_comments());
+        let rope = Rope::from_str(fixtures::input_complex_missing_annotations());
         let pos = Position::new(18, 23);
         let offset = pos_to_offset(pos, &rope).unwrap();
         let expected_offset = 523; // 'y' in "z = x + y"

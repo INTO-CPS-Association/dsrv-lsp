@@ -22,7 +22,6 @@ use dashmap::DashMap;
 use ropey::Rope;
 use tower_lsp_server::{Client, ls_types::*};
 use trustworthiness_checker::Declaration;
-use trustworthiness_checker::core::StreamType;
 use trustworthiness_checker::{
     VarName,
     lang::dsrv::{
@@ -333,9 +332,7 @@ fn variable_type(analysis: &Analysis, variable: &VarName) -> VariableType {
         .as_ref()
         .and_then(|typed| typed.type_annotation(variable))
     {
-        if !matches!(inferred, StreamType::Any) {
-            return VariableType::Inferred(inferred.to_string());
-        }
+        return VariableType::Inferred(inferred.to_string());
     }
 
     VariableType::Unknown
@@ -601,7 +598,7 @@ mod test {
 
     #[apply(async_test)]
     async fn test_get_all_declared_symbols() {
-        let input = fixtures::input_untyped_valid_simple();
+        let input = fixtures::input_missing_annotations_simple();
         let analysis = fixtures::analyse_spec(input).await;
 
         let vars = get_all_declared_symbols(&analysis);
@@ -646,7 +643,7 @@ mod test {
 
     #[apply(async_test)]
     async fn test_get_all_declared_symbols_complex() {
-        let input = fixtures::input_untyped_complex_with_comments();
+        let input = fixtures::input_complex_missing_annotations();
         let analysis = fixtures::analyse_spec(input).await;
 
         let vars = get_all_declared_symbols(&analysis);
@@ -722,7 +719,7 @@ mod test {
             documentation: "Declares an input stream that provides a sequence of event values to the monitor. The label acts as a variable name in the input namespace in(ϕ)",
         };
 
-        let rope = Rope::from_str(fixtures::input_untyped_valid_simple());
+        let rope = Rope::from_str(fixtures::input_missing_annotations_simple());
 
         let item = create_hover_item(&dsrv, &Span { start: 1, end: 2 }, &rope);
 
@@ -758,7 +755,7 @@ mod test {
 
     #[test]
     fn test_create_variable() {
-        let rope = Rope::from_str(fixtures::input_untyped_valid_simple());
+        let rope = Rope::from_str(fixtures::input_missing_annotations_simple());
         let var = format!(
             "```dsrv\n{} {}{}\n```\n---\n{}",
             "in",
@@ -801,7 +798,7 @@ mod test {
         let backend = service.inner();
 
         let uri = fixtures::create_URI_path();
-        let text = fixtures::input_untyped_valid_simple();
+        let text = fixtures::input_missing_annotations_simple();
 
         backend.change(uri.clone(), text).await;
 
@@ -829,7 +826,7 @@ mod test {
         let backend = service.inner();
 
         let uri = fixtures::create_URI_path();
-        let text = fixtures::input_untyped_complex_with_comments();
+        let text = fixtures::input_complex_missing_annotations();
 
         backend.change(uri.clone(), text).await;
 
@@ -905,7 +902,7 @@ mod test {
         let uri = fixtures::create_URI_path();
 
         // Test completion with  valid text
-        let text = fixtures::input_untyped_valid_simple();
+        let text = fixtures::input_missing_annotations_simple();
 
         backend.change(uri.clone(), text).await;
         // println!("Backend: {:?}", backend.token_map);
@@ -933,7 +930,7 @@ mod test {
         let backend = service.inner();
 
         let uri = fixtures::create_URI_path();
-        let text = fixtures::input_untyped_valid_simple(); // "in x\nin y\nout z\nz = x + y"
+        let text = fixtures::input_missing_annotations_simple(); // "in x\nin y\nout z\nz = x + y"
 
         backend.change(uri.clone(), text).await;
 
@@ -1205,7 +1202,7 @@ mod test {
         let service = fixtures::create_LSP_service();
         let backend = service.inner();
         let uri = fixtures::create_URI_path();
-        let valid = fixtures::input_untyped_valid_simple();
+        let valid = fixtures::input_missing_annotations_simple();
         let invalid = fixtures::input_untyped_invalid_simple();
 
         backend.change(uri.clone(), valid).await;
@@ -1276,12 +1273,18 @@ mod test {
     }
 
     #[apply(async_test)]
-    async fn hover_reports_no_type_when_inference_concludes_any() {
-        let text = fixtures::input_untyped_valid_simple();
+    async fn hover_reports_no_type_for_a_stream_without_an_annotation() {
+        let text = fixtures::input_missing_annotations_simple();
 
         let hover = hover_text_at(text, "x").await.expect("hover on x");
-        assert!(!hover.contains("Any"), "an unconstrained stream must not report a type: {hover}");
-        assert!(!hover.contains("inferred"), "{hover}");
+        assert!(
+            hover.contains("```dsrv\nin x\n```"),
+            "a stream with no annotation has no type to show: {hover}"
+        );
+        assert!(
+            !hover.contains("inferred"),
+            "nothing was inferred here: {hover}"
+        );
     }
 
     #[apply(async_test)]

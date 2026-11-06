@@ -296,7 +296,7 @@ mod test {
 
     #[test]
     fn test_tokenize_simple_input() {
-        let input = fixtures::input_untyped_valid_simple();
+        let input = fixtures::input_missing_annotations_simple();
         let tokens = fixtures::tokenize_input(input);
 
         println!("Tokens: {:#?}", tokens);

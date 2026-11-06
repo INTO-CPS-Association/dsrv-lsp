@@ -18,7 +18,7 @@ use crate::{
 use regex::Regex;
 use ropey::Rope;
 use tower_lsp_server::ls_types::*;
-use trustworthiness_checker::{TypeCheckOptions, lang::dsrv::{
+use trustworthiness_checker::{ lang::dsrv::{
     DsrvParseError, ast::{
         CheckedDsrvSpecification, Declaration, DsrvAstError, DsrvSpecification, ExprRef,
     }, diagnostics::{SemanticError, SemanticWarning}, parser::parse_str, span::Span,
@@ -77,25 +77,12 @@ impl Analysis {
             }
         };
 
-        // The editor always admits the local language semantically. Preserve
-        // the established strict contract for complete annotations, while
-        // allowing gradual inference to retain a checked AST during authoring.
-        let all_streams_annotated = spec
-            .input_vars()
-            .iter()
-            .chain(spec.roots().map(|(name, _)| name))
-            .all(|name| spec.type_annotation(name).is_some());
-        let options = if all_streams_annotated {
-            TypeCheckOptions::STRICT
-        } else {
-            TypeCheckOptions::GRADUAL
-        };
         let symbol_spans = Self::ast_symbol_spans(&spec, &lexer_symbol_spans);
         
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             match spec.clone().validate() {
                 Err(errors) => (Err(errors), Vec::new()),
-                Ok(validated) => validated.check(options).into_parts(),
+                Ok(validated) => validated.check().into_parts(),
             }
         }));
 
@@ -421,14 +408,11 @@ mod test {
     use trustworthiness_checker::{async_test, lang::dsrv::ast::ExprView};
 
     #[apply(async_test)]
-    async fn test_analyse_syntax_valid_input_gets_gradual_types() {
-        let analysis = fixtures::analyse_spec(fixtures::input_untyped_valid_simple()).await;
-        assert!(
-            analysis.diags.is_empty(),
-            "unexpected diagnostics: {analysis:?}"
-        );
+    async fn test_analyse_missing_annotations_is_rejected() {
+        let analysis = fixtures::analyse_spec(fixtures::input_missing_annotations_simple()).await;
+        assert!(!analysis.diags.is_empty());
         assert!(analysis.spec.is_some());
-        assert!(analysis.typed.is_some());
+        assert!(analysis.typed.is_none());
     }
 
     #[apply(async_test)]
@@ -463,10 +447,10 @@ mod test {
     #[apply(async_test)]
     async fn test_analyse_unformatted_input() {
         let analysis =
-            fixtures::analyse_spec(fixtures::input_untyped_long_valid_unformatted()).await;
+            fixtures::analyse_spec(fixtures::input_unformatted_missing_annotations()).await;
         assert!(analysis.spec.is_some());
-        assert!(analysis.typed.is_some());
-        assert!(analysis.diags.is_empty());
+        assert!(analysis.typed.is_none());
+        assert!(!analysis.diags.is_empty());
     }
 
     #[apply(async_test)]
@@ -589,13 +573,13 @@ mod test {
     }
 
     #[test]
-    fn assignment_only_model_uses_gradual_checking() {
+    fn equation_only_stream_takes_its_type_from_its_expression() {
         let analysis = Analysis::analyze_sync("x = 1");
 
         assert!(analysis.diags.is_empty(), "{:?}", analysis.diags);
         let typed = analysis
             .typed
-            .expect("gradually checked assignment-only model");
+            .expect("checked equation-only stream");
         assert_eq!(
             typed.type_annotation(&"x".into()).map(ToString::to_string),
             Some("Int".to_owned())
@@ -683,10 +667,11 @@ allPositive = List.fold(\acc: Bool, x: Int -> acc && (x > 0), true, samples)
 
     #[apply(async_test)]
     async fn test_analyse_untyped_with_comments() {
-        let analysis = fixtures::analyse_spec(fixtures::input_untyped_simple_with_comments()).await;
+        let analysis = fixtures::analyse_spec(fixtures::input_simple_with_comments()).await;
         assert!(
             analysis.diags.is_empty(),
-            "unexpected diagnostics: {analysis:?}"
+            "unexpected diagnostics: {:?}",
+            analysis.diags
         );
         let symbols = &analysis.symbol_spans;
         assert!(symbols.len() >= 3);
@@ -696,10 +681,10 @@ allPositive = List.fold(\acc: Bool, x: Int -> acc && (x > 0), true, samples)
     #[apply(async_test)]
     async fn test_analyse_untyped_complex() {
         let analysis =
-            fixtures::analyse_spec(fixtures::input_untyped_complex_with_comments()).await;
+            fixtures::analyse_spec(fixtures::input_complex_missing_annotations()).await;
         assert!(analysis.spec.is_some());
-        assert!(analysis.typed.is_some());
-        assert!(analysis.diags.is_empty());
+        assert!(analysis.typed.is_none());
+        assert!(!analysis.diags.is_empty());
         assert!(analysis.spec.as_ref().unwrap().nodes().next().is_some());
     }
 }
