@@ -195,3 +195,8 @@ out doubled: List<Int>
 doubled = List.map(\x: Int -> x * 2, samples)
 "#
 }
+
+#[allow(dead_code)]
+pub fn input_counter() -> &'static str {
+    "in x: Int\nout z: Int\nz = default(z[1], 0) + x"
+}

@@ -583,9 +583,24 @@ mod test {
     use super::*;
 
     fn position_of(text: &str, needle: &str) -> Position {
-        let offset = text.find(needle).expect("needle occurs in the fixture");
+        position_of_nth(text, needle, 0)
+    }
+
+    fn position_of_nth(text: &str, needle: &str, occurrence: usize) -> Position {
+        let offset = text
+            .match_indices(needle)
+            .nth(occurrence)
+            .map(|(offset, _)| offset)
+            .unwrap_or_else(|| {
+                let total = text.matches(needle).count();
+                panic!("{needle:?} occurs {total} times, no occurrence {occurrence}")
+            });
+
         let before = &text[..offset];
-        let line_start = before.rfind('\n').map_or(0, |index| index + 1);
+        let line_start = before
+            .rfind('\n')
+            .map_or(0, |index| index + 1);
+
         Position::new(
             before.matches('\n').count() as u32,
             (offset - line_start) as u32,
@@ -632,6 +647,10 @@ mod test {
     }
 
     async fn definition_at(text: &str, needle: &str) -> Option<Range> {
+        definition_at_nth(text, needle, 0).await
+    }
+
+    async fn definition_at_nth(text: &str, needle: &str, occurrence: usize) -> Option<Range> {
         let service = fixtures::create_LSP_service();
         let backend = service.inner();
         let uri = fixtures::create_URI_path();
@@ -640,7 +659,7 @@ mod test {
         let response = backend.provide_definition(GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier { uri },
-                position: position_of(text, needle),
+                position: position_of_nth(text, needle, occurrence),
             },
             work_done_progress_params: Default::default(),
             partial_result_params: Default::default(),
@@ -1456,5 +1475,55 @@ mod test {
             .expect("samples resolves to its declaration");
 
         assert_eq!(range.start.line, 0);
+    }
+
+    #[apply(async_test)]
+    async fn a_use_of_an_input_goes_to_its_declaration() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "x", 1).await,
+            Some(Range::new(Position::new(0, 3), Position::new(0, 4)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_declaration_goes_to_the_equation_that_defines_it() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "z", 0).await,
+            Some(Range::new(Position::new(2, 0), Position::new(2, 1)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn an_equations_left_hand_side_goes_to_the_declaration() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "z", 1).await,
+            Some(Range::new(Position::new(1, 4), Position::new(1, 5)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_use_inside_its_own_equation_goes_to_that_equation() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "z", 2).await,
+            Some(Range::new(Position::new(2, 0), Position::new(2, 1)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn an_input_declaration_resolves_to_itself() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "x", 0).await,
+            Some(Range::new(Position::new(0, 3), Position::new(0, 4)))
+        );
     }
 }
