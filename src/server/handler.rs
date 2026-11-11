@@ -10,7 +10,7 @@
  */
 
 use crate::server::backend::Backend;
-use tower_lsp_server::{LanguageServer, jsonrpc::Result, ls_types::*};
+use tower_lsp_server::{LanguageServer, jsonrpc::Result, ls_types::{request::GotoDeclarationParams, *}};
 
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -48,9 +48,9 @@ impl LanguageServer for Backend {
 
                 definition_provider: Some(OneOf::Left(true)),
 
-                // declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
-                //     work_done_progress_options: Default::default(),
-                // })),
+                declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
+                    work_done_progress_options: Default::default(),
+                })),
 
                 ..ServerCapabilities::default()
             },
@@ -98,12 +98,22 @@ impl LanguageServer for Backend {
         Ok(self.provide_hover(params))
     }
 
-    async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
         Ok(Backend::document_symbols(&self, params))
     }
 
-    async fn goto_definition(&self, params: GotoDefinitionParams) -> Result<Option<GotoDefinitionResponse>> {
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
         Ok(self.provide_definition(params))
+    }
+
+    async  fn goto_declaration(&self, params: GotoDeclarationParams) -> Result<Option<request::GotoDeclarationResponse>> {
+        Ok(self.provide_declaration(params))
     }
 }
 

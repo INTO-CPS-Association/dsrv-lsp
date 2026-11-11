@@ -21,6 +21,8 @@ use crate::utils::byte_to_pos;
 use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
+use tower_lsp_server::ls_types::request::GotoDeclarationParams;
+use tower_lsp_server::ls_types::request::GotoDeclarationResponse;
 use tower_lsp_server::{Client, ls_types::*};
 use trustworthiness_checker::Declaration;
 use trustworthiness_checker::{
@@ -255,17 +257,16 @@ impl Backend {
         let mut declared: HashSet<String> = HashSet::new();
         let mut equations: HashMap<String, &Declaration> = HashMap::new();
 
-
         for decl in spec.declarations() {
             match decl {
                 Declaration::Input { name, .. }
                 | Declaration::Output { name, .. }
                 | Declaration::Aux { name, .. } => {
                     declared.insert(name.name());
-                },
+                }
                 Declaration::Equation { name, .. } => {
                     equations.insert(name.name(), decl);
-                },
+                }
                 Declaration::TypeAlias { .. } => {}
             }
         }
@@ -285,11 +286,8 @@ impl Backend {
                 | Declaration::Aux { name, .. } => equations
                     .get(&name.name())
                     .copied()
-                    .map(|equation| {
-                        vec![create_document_symbol(&analysis, &rope, equation, None)]
-                    }),
-                Declaration::Equation { .. }
-                | Declaration::TypeAlias { .. } => None
+                    .map(|equation| vec![create_document_symbol(&analysis, &rope, equation, None)]),
+                Declaration::Equation { .. } | Declaration::TypeAlias { .. } => None,
             };
 
             result.push(create_document_symbol(&analysis, &rope, decl, children));
@@ -298,35 +296,49 @@ impl Backend {
         Some(DocumentSymbolResponse::Nested(result))
     }
 
-    pub fn provide_definition(&self, params: GotoDefinitionParams) -> Option<GotoDefinitionResponse> {
+    pub fn provide_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Option<GotoDefinitionResponse> {
         let pos = params.text_document_position_params;
         let uri_key = pos.text_document.uri;
         let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
         let rope = self.document_map.get(&uri_key)?.clone();
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
 
-        let (name, role) = analysis
-            .symbol_at_offset(pos_offset)
-            .map(|symbol| (symbol.name.clone(), Some(symbol.role.clone())))
-            .or_else(|| match analysis.node_at_offset(pos_offset)?.view() {
-                ExprView::Var(variable)
-                | ExprView::SIndex(variable, _)
-                | ExprView::MonitoredAt(variable, _) => Some((variable.name(), None)),
-                _ => None,
-            })?;
-
-        if analysis.is_lambda_bound(&name, pos_offset) {
-            return None;
-        }
+        let (name, role) = analysis.reference_at_offset(pos_offset)?;
 
         let target_role = match role {
             Some(SymbolRole::Equation) => SymbolRole::Declaration,
-            _ => SymbolRole::Equation
+            _ => SymbolRole::Equation,
         };
 
-        let span = find_span(&analysis, name, target_role);
+        let span = analysis
+            .symbol_named(&name, Some(target_role))
+            .or_else(|| analysis.symbol_named(&name, None))
+            .map(|symbol| symbol.name_span)?;
 
-        let location = Location::new(uri_key, span_to_range(&rope, span?));
+        let location = Location::new(uri_key, span_to_range(&rope, span));
+        Some(GotoDefinitionResponse::Scalar(location))
+    }
+
+    pub fn provide_declaration(
+        &self,
+        params: GotoDeclarationParams,
+    ) -> Option<GotoDeclarationResponse> {
+        let pos = params.text_document_position_params;
+        let uri_key = pos.text_document.uri;
+        let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
+        let rope = self.document_map.get(&uri_key)?.clone();
+        let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+
+        let (name, _) = analysis.reference_at_offset(pos_offset)?;
+
+        let span = analysis
+            .symbol_named(&name, Some(SymbolRole::Declaration))
+            .map(|symbol| symbol.name_span)?;
+
+        let location = Location::new(uri_key, span_to_range(&rope, span));
         Some(GotoDefinitionResponse::Scalar(location))
     }
 
@@ -466,7 +478,6 @@ fn create_variable_hover(
         .map(|ty| format!(": {ty}"))
         .unwrap_or_default();
 
-
     let (stream_kind, stream_text) = if spec.input_vars().contains(variable) {
         ("in", get_builtin_by_label("in")?.documentation)
     } else if spec.aux_vars().contains(variable) {
@@ -509,14 +520,14 @@ fn role_to_symbol_kind(decl: &Declaration) -> SymbolKind {
         Declaration::Output { .. } => SymbolKind::FIELD,
         Declaration::Aux { .. } => SymbolKind::PROPERTY,
         Declaration::TypeAlias { .. } => SymbolKind::INTERFACE,
-        Declaration::Equation { .. } => SymbolKind::FUNCTION
+        Declaration::Equation { .. } => SymbolKind::FUNCTION,
     }
 }
 
 fn span_to_range(rope: &Rope, span: Span) -> Range {
     Range {
         start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
-        end: byte_to_pos(&rope, span.end as usize).unwrap_or_default()
+        end: byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
     }
 }
 
@@ -524,19 +535,19 @@ fn create_document_symbol(
     analysis: &Analysis,
     rope: &Rope,
     decl: &Declaration,
-    children: Option<Vec<DocumentSymbol>>
+    children: Option<Vec<DocumentSymbol>>,
 ) -> DocumentSymbol {
     let (name, detail) = match decl {
         Declaration::Aux { name, .. }
         | Declaration::Input { name, .. }
         | Declaration::Output { name, .. }
         | Declaration::Equation { name, .. } => (
-                name.name(),
-                variable_type(analysis, name).name().map(str::to_string),
+            name.name(),
+            variable_type(analysis, name).name().map(str::to_string),
         ),
         Declaration::TypeAlias { name, .. } => (name.to_string(), None),
     };
-    
+
     let span = decl.span();
 
     let name_span = analysis
@@ -545,11 +556,11 @@ fn create_document_symbol(
         .find(|symbol| {
             symbol.name == name
                 && span.contains_offset(symbol.name_span.start)
-                && span.contains_offset(symbol.name_span.end)  
+                && span.contains_offset(symbol.name_span.end)
         })
         .map_or(span, |symbol| symbol.name_span);
 
-     DocumentSymbol {
+    DocumentSymbol {
         name,
         range: span_to_range(&rope, span),
         selection_range: span_to_range(&rope, name_span),
@@ -557,20 +568,8 @@ fn create_document_symbol(
         detail,
         children,
         deprecated: None,
-        tags: None
+        tags: None,
     }
-}
-
-fn find_span(analysis: &Analysis, name: String, role: SymbolRole) -> Option<Span> {
-    analysis.symbol_spans
-        .iter()
-        .find(|symbol| { symbol.name == name && symbol.role == role })
-        .or_else(|| {
-            analysis.symbol_spans
-                .iter()
-                .find(|symbol| { symbol.name == name })  
-        })
-        .map(|symbol| { symbol.name_span })
 }
 
 #[cfg(test)]
@@ -597,9 +596,7 @@ mod test {
             });
 
         let before = &text[..offset];
-        let line_start = before
-            .rfind('\n')
-            .map_or(0, |index| index + 1);
+        let line_start = before.rfind('\n').map_or(0, |index| index + 1);
 
         Position::new(
             before.matches('\n').count() as u32,
@@ -1340,7 +1337,9 @@ mod test {
         let flags = hover_text_at(text, "flags").await.expect("hover on flags");
         assert!(flags.contains("List<Bool>"), "{flags}");
 
-        let greeting = hover_text_at(text, "greeting").await.expect("hover on greeting");
+        let greeting = hover_text_at(text, "greeting")
+            .await
+            .expect("hover on greeting");
         assert!(greeting.contains(": Str"), "{greeting}");
     }
 
@@ -1348,11 +1347,18 @@ mod test {
     async fn hover_distinguishes_a_written_annotation_from_an_inferred_type() {
         let text = fixtures::input_mixed_annotated_and_inferred();
 
-        let annotated = hover_text_at(text, "annotated").await.expect("hover on annotated");
+        let annotated = hover_text_at(text, "annotated")
+            .await
+            .expect("hover on annotated");
         assert!(annotated.contains(": Int"), "{annotated}");
-        assert!(!annotated.contains("inferred"), "a written annotation must not be reported as inferred: {annotated}");
+        assert!(
+            !annotated.contains("inferred"),
+            "a written annotation must not be reported as inferred: {annotated}"
+        );
 
-        let inferred = hover_text_at(text, "inferred").await.expect("hover on inferred");
+        let inferred = hover_text_at(text, "inferred")
+            .await
+            .expect("hover on inferred");
         assert!(inferred.contains(": Int"), "{inferred}");
         assert!(inferred.contains("inferred"), "{inferred}");
     }
@@ -1378,7 +1384,11 @@ mod test {
         let analysis = Analysis::analyze_sync(text);
 
         assert!(analysis.spec.is_some());
-        assert!(analysis.typed.is_some(), "unexpected diagnostics: {:?}", analysis.diags);
+        assert!(
+            analysis.typed.is_some(),
+            "unexpected diagnostics: {:?}",
+            analysis.diags
+        );
         assert!(
             !analysis
                 .symbol_spans
@@ -1387,7 +1397,9 @@ mod test {
             "a type alias names a type, not a stream, so it is not a symbol here"
         );
 
-        let nested = hover_text_at(text, "nested_map").await.expect("hover on nested_map");
+        let nested = hover_text_at(text, "nested_map")
+            .await
+            .expect("hover on nested_map");
         assert!(nested.contains("Map<List<Bool>>"), "{nested}");
     }
 
