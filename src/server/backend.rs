@@ -324,15 +324,7 @@ impl Backend {
             _ => SymbolRole::Equation
         };
 
-        let span = analysis.symbol_spans
-            .iter()
-            .find(|symbol| { symbol.name == name && symbol.role == target_role })
-            .or_else(|| {
-                analysis.symbol_spans
-                    .iter()
-                    .find(|symbol| { symbol.name == name })  
-            })
-            .map(|symbol| { symbol.name_span });
+        let span = find_span(&analysis, name, target_role);
 
         let location = Location::new(uri_key, span_to_range(&rope, span?));
         Some(GotoDefinitionResponse::Scalar(location))
@@ -567,6 +559,18 @@ fn create_document_symbol(
         deprecated: None,
         tags: None
     }
+}
+
+fn find_span(analysis: &Analysis, name: String, role: SymbolRole) -> Option<Span> {
+    analysis.symbol_spans
+        .iter()
+        .find(|symbol| { symbol.name == name && symbol.role == role })
+        .or_else(|| {
+            analysis.symbol_spans
+                .iter()
+                .find(|symbol| { symbol.name == name })  
+        })
+        .map(|symbol| { symbol.name_span })
 }
 
 #[cfg(test)]
