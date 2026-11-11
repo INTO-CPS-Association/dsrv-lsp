@@ -10,7 +10,14 @@
  */
 
 use crate::server::backend::Backend;
-use tower_lsp_server::{LanguageServer, jsonrpc::Result, ls_types::*};
+use tower_lsp_server::{
+    LanguageServer,
+    jsonrpc::Result,
+    ls_types::{
+        request::{GotoDeclarationParams, GotoDeclarationResponse},
+        *,
+    },
+};
 
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -46,11 +53,12 @@ impl LanguageServer for Backend {
 
                 document_symbol_provider: Some(OneOf::Left(true)),
 
-                // TODO: Add support for definition and declaration providers in the future to enable jumping to definitions and declarations of input and output streams
-                // definition_provider: Some(OneOf::Left(true)),
-                // declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
-                //     work_done_progress_options: Default::default(),
-                // })),
+                definition_provider: Some(OneOf::Left(true)),
+
+                declaration_provider: Some(DeclarationCapability::Options(DeclarationOptions {
+                    work_done_progress_options: Default::default(),
+                })),
+
                 ..ServerCapabilities::default()
             },
             ..Default::default()
@@ -97,8 +105,25 @@ impl LanguageServer for Backend {
         Ok(self.provide_hover(params))
     }
 
-    async fn document_symbol(&self, params: DocumentSymbolParams) -> Result<Option<DocumentSymbolResponse>> {
+    async fn document_symbol(
+        &self,
+        params: DocumentSymbolParams,
+    ) -> Result<Option<DocumentSymbolResponse>> {
         Ok(Backend::document_symbols(&self, params))
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        Ok(self.provide_definition(params))
+    }
+
+    async fn goto_declaration(
+        &self,
+        params: GotoDeclarationParams,
+    ) -> Result<Option<GotoDeclarationResponse>> {
+        Ok(self.provide_declaration(params))
     }
 }
 
@@ -150,8 +175,12 @@ mod test {
         ); // This is where the diagnostic is also supported, not through the diagnostic provider as it don't need pull based diagnostics
 
         assert!(
-            server_cap.definition_provider.is_none(),
-            "Expected definition provider to not be supported"
+            server_cap.definition_provider.is_some(),
+            "Expected definition provider to be supported"
+        );
+        assert!(
+            server_cap.declaration_provider.is_some(),
+            "Expected declaration provider to be supported"
         );
         assert!(
             server_cap.signature_help_provider.is_none(),

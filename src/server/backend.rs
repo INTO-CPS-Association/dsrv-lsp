@@ -14,12 +14,15 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::lang::analyser::Analysis;
+use crate::lang::analyser::SymbolRole;
 use crate::lang::syntax::completions_list::*;
 use crate::lang::syntax::lexer::*;
 use crate::utils::byte_to_pos;
 use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
+use tower_lsp_server::ls_types::request::GotoDeclarationParams;
+use tower_lsp_server::ls_types::request::GotoDeclarationResponse;
 use tower_lsp_server::{Client, ls_types::*};
 use trustworthiness_checker::Declaration;
 use trustworthiness_checker::{
@@ -254,17 +257,16 @@ impl Backend {
         let mut declared: HashSet<String> = HashSet::new();
         let mut equations: HashMap<String, &Declaration> = HashMap::new();
 
-
         for decl in spec.declarations() {
             match decl {
                 Declaration::Input { name, .. }
                 | Declaration::Output { name, .. }
                 | Declaration::Aux { name, .. } => {
                     declared.insert(name.name());
-                },
+                }
                 Declaration::Equation { name, .. } => {
                     equations.insert(name.name(), decl);
-                },
+                }
                 Declaration::TypeAlias { .. } => {}
             }
         }
@@ -284,17 +286,60 @@ impl Backend {
                 | Declaration::Aux { name, .. } => equations
                     .get(&name.name())
                     .copied()
-                    .map(|equation| {
-                        vec![create_document_symbol(&analysis, &rope, equation, None)]
-                    }),
-                Declaration::Equation { .. }
-                | Declaration::TypeAlias { .. } => None
+                    .map(|equation| vec![create_document_symbol(&analysis, &rope, equation, None)]),
+                Declaration::Equation { .. } | Declaration::TypeAlias { .. } => None,
             };
 
             result.push(create_document_symbol(&analysis, &rope, decl, children));
         }
 
         Some(DocumentSymbolResponse::Nested(result))
+    }
+
+    pub fn provide_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Option<GotoDefinitionResponse> {
+        let pos = params.text_document_position_params;
+        let uri_key = pos.text_document.uri;
+        let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
+        let rope = self.document_map.get(&uri_key)?.clone();
+        let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+
+        let (name, role) = analysis.reference_at_offset(pos_offset)?;
+
+        let target_role = match role {
+            Some(SymbolRole::Equation) => SymbolRole::Declaration,
+            _ => SymbolRole::Equation,
+        };
+
+        let span = analysis
+            .symbol_named(&name, Some(target_role))
+            .or_else(|| analysis.symbol_named(&name, None))
+            .map(|symbol| symbol.name_span)?;
+
+        let location = Location::new(uri_key, span_to_range(&rope, span));
+        Some(GotoDefinitionResponse::Scalar(location))
+    }
+
+    pub fn provide_declaration(
+        &self,
+        params: GotoDeclarationParams,
+    ) -> Option<GotoDeclarationResponse> {
+        let pos = params.text_document_position_params;
+        let uri_key = pos.text_document.uri;
+        let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
+        let rope = self.document_map.get(&uri_key)?.clone();
+        let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+
+        let (name, _) = analysis.reference_at_offset(pos_offset)?;
+
+        let span = analysis
+            .symbol_named(&name, Some(SymbolRole::Declaration))
+            .map(|symbol| symbol.name_span)?;
+
+        let location = Location::new(uri_key, span_to_range(&rope, span));
+        Some(GotoDeclarationResponse::Scalar(location))
     }
 
     // Helper function to create diagnostics from error message and range
@@ -433,7 +478,6 @@ fn create_variable_hover(
         .map(|ty| format!(": {ty}"))
         .unwrap_or_default();
 
-
     let (stream_kind, stream_text) = if spec.input_vars().contains(variable) {
         ("in", get_builtin_by_label("in")?.documentation)
     } else if spec.aux_vars().contains(variable) {
@@ -476,14 +520,14 @@ fn role_to_symbol_kind(decl: &Declaration) -> SymbolKind {
         Declaration::Output { .. } => SymbolKind::FIELD,
         Declaration::Aux { .. } => SymbolKind::PROPERTY,
         Declaration::TypeAlias { .. } => SymbolKind::INTERFACE,
-        Declaration::Equation { .. } => SymbolKind::FUNCTION
+        Declaration::Equation { .. } => SymbolKind::FUNCTION,
     }
 }
 
 fn span_to_range(rope: &Rope, span: Span) -> Range {
     Range {
         start: byte_to_pos(&rope, span.start as usize).unwrap_or_default(),
-        end: byte_to_pos(&rope, span.end as usize).unwrap_or_default()
+        end: byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
     }
 }
 
@@ -491,19 +535,19 @@ fn create_document_symbol(
     analysis: &Analysis,
     rope: &Rope,
     decl: &Declaration,
-    children: Option<Vec<DocumentSymbol>>
+    children: Option<Vec<DocumentSymbol>>,
 ) -> DocumentSymbol {
     let (name, detail) = match decl {
         Declaration::Aux { name, .. }
         | Declaration::Input { name, .. }
         | Declaration::Output { name, .. }
         | Declaration::Equation { name, .. } => (
-                name.name(),
-                variable_type(analysis, name).name().map(str::to_string),
+            name.name(),
+            variable_type(analysis, name).name().map(str::to_string),
         ),
         Declaration::TypeAlias { name, .. } => (name.to_string(), None),
     };
-    
+
     let span = decl.span();
 
     let name_span = analysis
@@ -512,11 +556,11 @@ fn create_document_symbol(
         .find(|symbol| {
             symbol.name == name
                 && span.contains_offset(symbol.name_span.start)
-                && span.contains_offset(symbol.name_span.end)  
+                && span.contains_offset(symbol.name_span.end)
         })
         .map_or(span, |symbol| symbol.name_span);
 
-     DocumentSymbol {
+    DocumentSymbol {
         name,
         range: span_to_range(&rope, span),
         selection_range: span_to_range(&rope, name_span),
@@ -524,7 +568,7 @@ fn create_document_symbol(
         detail,
         children,
         deprecated: None,
-        tags: None
+        tags: None,
     }
 }
 
@@ -538,9 +582,22 @@ mod test {
     use super::*;
 
     fn position_of(text: &str, needle: &str) -> Position {
-        let offset = text.find(needle).expect("needle occurs in the fixture");
+        position_of_nth(text, needle, 0)
+    }
+
+    fn position_of_nth(text: &str, needle: &str, occurrence: usize) -> Position {
+        let offset = text
+            .match_indices(needle)
+            .nth(occurrence)
+            .map(|(offset, _)| offset)
+            .unwrap_or_else(|| {
+                let total = text.matches(needle).count();
+                panic!("{needle:?} occurs {total} times, no occurrence {occurrence}")
+            });
+
         let before = &text[..offset];
         let line_start = before.rfind('\n').map_or(0, |index| index + 1);
+
         Position::new(
             before.matches('\n').count() as u32,
             (offset - line_start) as u32,
@@ -583,6 +640,52 @@ mod test {
             Some(DocumentSymbolResponse::Nested(symbols)) => symbols,
             Some(DocumentSymbolResponse::Flat(_)) => panic!("expected a nested response"),
             None => panic!("document_symbols returned None: the whole outline was discarded"),
+        }
+    }
+
+    async fn definition_at(text: &str, needle: &str) -> Option<Range> {
+        definition_at_nth(text, needle, 0).await
+    }
+
+    async fn definition_at_nth(text: &str, needle: &str, occurrence: usize) -> Option<Range> {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        backend.change(uri.clone(), text).await;
+
+        let response = backend.provide_definition(GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: position_of_nth(text, needle, occurrence),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        })?;
+
+        match response {
+            GotoDefinitionResponse::Scalar(location) => Some(location.range),
+            _ => panic!("expected a single location"),
+        }
+    }
+
+    async fn declaration_at_nth(text: &str, needle: &str, occurrence: usize) -> Option<Range> {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        backend.change(uri.clone(), text).await;
+
+        let response = backend.provide_declaration(GotoDeclarationParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: position_of_nth(text, needle, occurrence),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        })?;
+
+        match response {
+            GotoDeclarationResponse::Scalar(location) => Some(location.range),
+            _ => panic!("expected a single location"),
         }
     }
 
@@ -1255,7 +1358,9 @@ mod test {
         let flags = hover_text_at(text, "flags").await.expect("hover on flags");
         assert!(flags.contains("List<Bool>"), "{flags}");
 
-        let greeting = hover_text_at(text, "greeting").await.expect("hover on greeting");
+        let greeting = hover_text_at(text, "greeting")
+            .await
+            .expect("hover on greeting");
         assert!(greeting.contains(": Str"), "{greeting}");
     }
 
@@ -1263,11 +1368,18 @@ mod test {
     async fn hover_distinguishes_a_written_annotation_from_an_inferred_type() {
         let text = fixtures::input_mixed_annotated_and_inferred();
 
-        let annotated = hover_text_at(text, "annotated").await.expect("hover on annotated");
+        let annotated = hover_text_at(text, "annotated")
+            .await
+            .expect("hover on annotated");
         assert!(annotated.contains(": Int"), "{annotated}");
-        assert!(!annotated.contains("inferred"), "a written annotation must not be reported as inferred: {annotated}");
+        assert!(
+            !annotated.contains("inferred"),
+            "a written annotation must not be reported as inferred: {annotated}"
+        );
 
-        let inferred = hover_text_at(text, "inferred").await.expect("hover on inferred");
+        let inferred = hover_text_at(text, "inferred")
+            .await
+            .expect("hover on inferred");
         assert!(inferred.contains(": Int"), "{inferred}");
         assert!(inferred.contains("inferred"), "{inferred}");
     }
@@ -1293,7 +1405,11 @@ mod test {
         let analysis = Analysis::analyze_sync(text);
 
         assert!(analysis.spec.is_some());
-        assert!(analysis.typed.is_some(), "unexpected diagnostics: {:?}", analysis.diags);
+        assert!(
+            analysis.typed.is_some(),
+            "unexpected diagnostics: {:?}",
+            analysis.diags
+        );
         assert!(
             !analysis
                 .symbol_spans
@@ -1302,7 +1418,9 @@ mod test {
             "a type alias names a type, not a stream, so it is not a symbol here"
         );
 
-        let nested = hover_text_at(text, "nested_map").await.expect("hover on nested_map");
+        let nested = hover_text_at(text, "nested_map")
+            .await
+            .expect("hover on nested_map");
         assert!(nested.contains("Map<List<Bool>>"), "{nested}");
     }
 
@@ -1368,5 +1486,98 @@ mod test {
         let value = named(&symbols, "value");
 
         assert_eq!(value.detail.as_deref(), Some("Int"));
+    }
+
+    #[apply(async_test)]
+    async fn a_lambda_parameter_does_not_resolve_to_a_stream_of_the_same_name() {
+        let text = fixtures::input_lambda_shadows_an_input();
+
+        assert_eq!(
+            definition_at(text, "x * 2").await,
+            None,
+            "a name bound by the lambda must not resolve to `in x`"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn the_lambda_guard_leaves_ordinary_references_alone() {
+        let text = fixtures::input_lambda_shadows_an_input();
+
+        let range = definition_at(text, "samples)")
+            .await
+            .expect("samples resolves to its declaration");
+
+        assert_eq!(range.start.line, 0);
+    }
+
+    #[apply(async_test)]
+    async fn a_use_of_an_input_goes_to_its_declaration() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "x", 1).await,
+            Some(Range::new(Position::new(0, 3), Position::new(0, 4)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_declaration_goes_to_the_equation_that_defines_it() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "z", 0).await,
+            Some(Range::new(Position::new(2, 0), Position::new(2, 1)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn an_equations_left_hand_side_goes_to_the_declaration() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "z", 1).await,
+            Some(Range::new(Position::new(1, 4), Position::new(1, 5)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_use_inside_its_own_equation_goes_to_that_equation() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "z", 2).await,
+            Some(Range::new(Position::new(2, 0), Position::new(2, 1)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn an_input_declaration_resolves_to_itself() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            definition_at_nth(text, "x", 0).await,
+            Some(Range::new(Position::new(0, 3), Position::new(0, 4)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_use_inside_its_own_equation_goes_to_declaration() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            declaration_at_nth(text, "z", 2).await,
+            Some(Range::new(Position::new(1, 4), Position::new(1, 5)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_use_on_a_stream_without_declaration_returns_none() {
+        let text = fixtures::input_inferred_from_annotated_inputs();
+
+        assert_eq!(
+            declaration_at_nth(text, "value", 0).await,
+            None,
+            "a stream defined only by an equation has no declaration"
+        );
     }
 }

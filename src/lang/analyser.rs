@@ -18,11 +18,15 @@ use crate::{
 use regex::Regex;
 use ropey::Rope;
 use tower_lsp_server::ls_types::*;
-use trustworthiness_checker::{ lang::dsrv::{
-    DsrvParseError, ast::{
-        CheckedDsrvSpecification, Declaration, DsrvAstError, DsrvSpecification, ExprRef,
-    }, diagnostics::{SemanticError, SemanticWarning}, parser::parse_str, span::Span,
-}};
+use trustworthiness_checker::lang::dsrv::{
+    DsrvParseError,
+    ast::{
+        CheckedDsrvSpecification, Declaration, DsrvAstError, DsrvSpecification, ExprRef, ExprView,
+    },
+    diagnostics::{SemanticError, SemanticWarning},
+    parser::parse_str,
+    span::Span,
+};
 
 /// A source symbol whose span is not exposed by the checker AST.
 ///
@@ -33,7 +37,14 @@ use trustworthiness_checker::{ lang::dsrv::{
 pub struct SymbolSpan {
     pub name: String,
     pub span: Span,
-    pub name_span: Span // span of the declaration name only ("in x" -> 3..4)
+    pub name_span: Span,  // span of the declaration name only ("in x" -> 3..4)
+    pub role: SymbolRole, // declaration (in, out, aux) or equation
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymbolRole {
+    Declaration,
+    Equation,
 }
 
 #[derive(Clone, Debug)]
@@ -78,7 +89,7 @@ impl Analysis {
         };
 
         let symbol_spans = Self::ast_symbol_spans(&spec, &lexer_symbol_spans);
-        
+
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             match spec.clone().validate() {
                 Err(errors) => (Err(errors), Vec::new()),
@@ -87,13 +98,11 @@ impl Analysis {
         }));
 
         match outcome {
-            Ok((Ok(typed), warnings)) => {
-                Analysis {
+            Ok((Ok(typed), warnings)) => Analysis {
                 spec: Some(spec),
                 typed: Some(typed),
                 diags: Self::warning_diags(text, &warnings),
                 symbol_spans,
-                }
             },
             Ok((Err(errors), warnings)) => {
                 let rope = Rope::from_str(text);
@@ -104,7 +113,7 @@ impl Analysis {
                 diags.extend(
                     warnings
                         .iter()
-                        .map(|warning| Self::create_warning_diag(&rope, warning)),  
+                        .map(|warning| Self::create_warning_diag(&rope, warning)),
                 );
                 Analysis {
                     spec: Some(spec),
@@ -145,13 +154,21 @@ impl Analysis {
                         && entry.span().contains_offset(symbol.span.start)
                         && entry.span().contains_offset(symbol.span.end)
                 });
-                let span = if matches!(entry, Declaration::Equation { .. }) {
-                    lexer.map_or_else(|| entry.span(), |symbol| symbol.span)
+                let (span, role) = if matches!(entry, Declaration::Equation { .. }) {
+                    (
+                        lexer.map_or_else(|| entry.span(), |symbol| symbol.span),
+                        SymbolRole::Equation,
+                    )
                 } else {
-                    entry.span()
+                    (entry.span(), SymbolRole::Declaration)
                 };
                 let name_span = lexer.map_or_else(|| entry.span(), |symbol| symbol.name_span);
-                Some(SymbolSpan { name, span, name_span })
+                Some(SymbolSpan {
+                    name,
+                    span,
+                    name_span,
+                    role,
+                })
             })
             .collect()
     }
@@ -180,6 +197,7 @@ impl Analysis {
                             start: name.span.start as u32,
                             end: name.span.end as u32,
                         },
+                        role: SymbolRole::Declaration,
                     });
                 }
             } else if token.token == Token::Identifier
@@ -194,7 +212,8 @@ impl Analysis {
                 symbols.push(SymbolSpan {
                     name: token.content.clone(),
                     span,
-                    name_span: span
+                    name_span: span,
+                    role: SymbolRole::Equation,
                 });
             }
         }
@@ -218,6 +237,47 @@ impl Analysis {
             .iter()
             .filter(|symbol| symbol.span.contains_offset(offset))
             .min_by_key(|symbol| symbol.span.len())
+    }
+
+    pub fn is_lambda_bound(&self, name: &str, offset: u32) -> bool {
+        let Some(spec) = self.spec.as_ref() else {
+            return false;
+        };
+
+        spec.nodes().any(|node| {
+            node.span().contains_offset(offset)
+                && matches!(
+                    node.view(),
+                    ExprView::Lambda(parameters, _)
+                        if parameters
+                            .iter()
+                            .any(|(parameter, _)| parameter.name() == name)
+                )
+        })
+    }
+
+    pub fn reference_at_offset(&self, pos_offset: u32) -> Option<(String, Option<SymbolRole>)> {
+        let (name, role) = self
+            .symbol_at_offset(pos_offset)
+            .map(|symbol| (symbol.name.clone(), Some(symbol.role)))
+            .or_else(|| match self.node_at_offset(pos_offset)?.view() {
+                ExprView::Var(variable)
+                | ExprView::SIndex(variable, _)
+                | ExprView::MonitoredAt(variable, _) => Some((variable.name(), None)),
+                _ => None,
+            })?;
+
+        if self.is_lambda_bound(&name, pos_offset) {
+            return None;
+        }
+
+        Some((name, role))
+    }
+
+    pub fn symbol_named(&self, name: &str, role: Option<SymbolRole>) -> Option<&SymbolSpan> {
+        self.symbol_spans
+            .iter()
+            .find(|symbol| symbol.name == name && role.is_none_or(|wanted| symbol.role == wanted))
     }
 
     fn semantic_error_message(error: &SemanticError) -> String {
@@ -285,12 +345,20 @@ impl Analysis {
                 let range = Self::ast_error_span(ast_error)
                     .map(|span| Self::span_range(text, span))
                     .unwrap_or_else(|| Range::new(position, position));
-                return Self::create_diag(&format!("Syntax error: {ast_error}"), range, DiagnosticSeverity::ERROR);
+                return Self::create_diag(
+                    &format!("Syntax error: {ast_error}"),
+                    range,
+                    DiagnosticSeverity::ERROR,
+                );
             } else {
                 ("Syntax error: Invalid DSRV syntax", position)
             };
 
-        Self::create_diag(message, Range::new(position, end), DiagnosticSeverity::ERROR)
+        Self::create_diag(
+            message,
+            Range::new(position, end),
+            DiagnosticSeverity::ERROR,
+        )
     }
 
     fn source_char_at(text: &str, position: Position) -> Option<char> {
@@ -365,7 +433,8 @@ impl Analysis {
                 end: byte_to_pos(rope, span.end as usize).unwrap_or_default(),
             })
             .unwrap_or_default();
-        let mut diagnostic = Self::create_diag(warning.message(), range, DiagnosticSeverity::WARNING);
+        let mut diagnostic =
+            Self::create_diag(warning.message(), range, DiagnosticSeverity::WARNING);
         diagnostic.code = Some(NumberOrString::String(warning.code().to_string()));
         diagnostic
     }
@@ -378,7 +447,11 @@ impl Analysis {
                 end: byte_to_pos(rope, span.end as usize).unwrap_or_default(),
             })
             .unwrap_or_default();
-        let mut diagnostic = Self::create_diag(&Self::semantic_error_message(error), range, DiagnosticSeverity::ERROR);
+        let mut diagnostic = Self::create_diag(
+            &Self::semantic_error_message(error),
+            range,
+            DiagnosticSeverity::ERROR,
+        );
         if let SemanticError::DuplicateDeclaration {
             variable, first, ..
         } = error
@@ -577,9 +650,7 @@ mod test {
         let analysis = Analysis::analyze_sync("x = 1");
 
         assert!(analysis.diags.is_empty(), "{:?}", analysis.diags);
-        let typed = analysis
-            .typed
-            .expect("checked equation-only stream");
+        let typed = analysis.typed.expect("checked equation-only stream");
         assert_eq!(
             typed.type_annotation(&"x".into()).map(ToString::to_string),
             Some("Int".to_owned())
@@ -680,8 +751,7 @@ allPositive = List.fold(\acc: Bool, x: Int -> acc && (x > 0), true, samples)
 
     #[apply(async_test)]
     async fn test_analyse_untyped_complex() {
-        let analysis =
-            fixtures::analyse_spec(fixtures::input_complex_missing_annotations()).await;
+        let analysis = fixtures::analyse_spec(fixtures::input_complex_missing_annotations()).await;
         assert!(analysis.spec.is_some());
         assert!(analysis.typed.is_none());
         assert!(!analysis.diags.is_empty());
