@@ -18,11 +18,11 @@ use crate::{
 use regex::Regex;
 use ropey::Rope;
 use tower_lsp_server::ls_types::*;
-use trustworthiness_checker::{ lang::dsrv::{
+use trustworthiness_checker::lang::dsrv::{
     DsrvParseError, ast::{
-        CheckedDsrvSpecification, Declaration, DsrvAstError, DsrvSpecification, ExprRef,
+        CheckedDsrvSpecification, Declaration, DsrvAstError, DsrvSpecification, ExprRef, ExprView,
     }, diagnostics::{SemanticError, SemanticWarning}, parser::parse_str, span::Span,
-}};
+};
 
 /// A source symbol whose span is not exposed by the checker AST.
 ///
@@ -218,6 +218,23 @@ impl Analysis {
             .iter()
             .filter(|symbol| symbol.span.contains_offset(offset))
             .min_by_key(|symbol| symbol.span.len())
+    }
+
+    pub fn is_lambda_bound(&self, name: &str, offset: u32) -> bool {
+        let Some(spec) = self.spec.as_ref() else {
+            return false;
+        };
+
+        spec.nodes().any(|node| {
+            node.span().contains_offset(offset)
+                && matches!(
+                    node.view(),
+                    ExprView::Lambda(parameters, _)
+                        if parameters
+                            .iter()
+                            .any(|(parameter, _)| parameter.name() == name)
+                )
+        })
     }
 
     fn semantic_error_message(error: &SemanticError) -> String {

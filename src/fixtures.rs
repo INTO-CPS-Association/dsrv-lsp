@@ -186,3 +186,12 @@ nested_map = Map("flags": List(flag, !flag))
 value = x + 1
 "#
 }
+
+#[allow(dead_code)]
+pub fn input_lambda_shadows_an_input() -> &'static str {
+    r#"in samples: List<Int>
+in x: Int
+out doubled: List<Int>
+doubled = List.map(\x: Int -> x * 2, samples)
+"#
+}
