@@ -169,6 +169,10 @@ mod test {
             "Expected definition provider to be supported"
         );
         assert!(
+            server_cap.declaration_provider.is_some(),
+            "Expected declaration provider to be supported"
+        );
+        assert!(
             server_cap.signature_help_provider.is_none(),
             "Expected signature help provider to not be supported"
         );

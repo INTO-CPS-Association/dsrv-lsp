@@ -668,6 +668,27 @@ mod test {
         }
     }
 
+    async fn declaration_at_nth(text: &str, needle: &str, occurrence: usize) -> Option<Range> {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        backend.change(uri.clone(), text).await;
+
+        let response = backend.provide_declaration(GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: position_of_nth(text, needle, occurrence),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        })?;
+
+        match response {
+            GotoDefinitionResponse::Scalar(location) => Some(location.range),
+            _ => panic!("expected a single location"),
+        }
+    }
+
     fn named<'a>(symbols: &'a [DocumentSymbol], name: &str) -> &'a DocumentSymbol {
         symbols
             .iter()
@@ -1536,6 +1557,26 @@ mod test {
         assert_eq!(
             definition_at_nth(text, "x", 0).await,
             Some(Range::new(Position::new(0, 3), Position::new(0, 4)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_use_inside_its_own_equation_goes_to_declaration() {
+        let text = fixtures::input_counter();
+
+        assert_eq!(
+            declaration_at_nth(text, "z", 2).await,
+            Some(Range::new(Position::new(1, 4), Position::new(1, 5)))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_use_on_a_stream_without_declaration_returns_none() {
+        let text = fixtures::input_inferred_from_annotated_inputs();
+
+        assert_eq!(
+            declaration_at_nth(text, "value", 0).await,
+            None
         );
     }
 }
