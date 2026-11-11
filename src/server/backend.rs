@@ -20,7 +20,6 @@ use crate::utils::byte_to_pos;
 use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
-use tower_lsp_server::ls_types::GotoDefinitionResponse::Scalar;
 use tower_lsp_server::{Client, ls_types::*};
 use trustworthiness_checker::Declaration;
 use trustworthiness_checker::{

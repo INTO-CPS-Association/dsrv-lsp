@@ -33,7 +33,14 @@ use trustworthiness_checker::lang::dsrv::{
 pub struct SymbolSpan {
     pub name: String,
     pub span: Span,
-    pub name_span: Span // span of the declaration name only ("in x" -> 3..4)
+    pub name_span: Span, // span of the declaration name only ("in x" -> 3..4)
+    pub role: SymbolRole // declaration (in, out, aux) or equation
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymbolRole {
+    Declaration,
+    Equation
 }
 
 #[derive(Clone, Debug)]
@@ -145,13 +152,16 @@ impl Analysis {
                         && entry.span().contains_offset(symbol.span.start)
                         && entry.span().contains_offset(symbol.span.end)
                 });
-                let span = if matches!(entry, Declaration::Equation { .. }) {
-                    lexer.map_or_else(|| entry.span(), |symbol| symbol.span)
+                let (span, role) = if matches!(entry, Declaration::Equation { .. }) {
+                    (
+                        lexer.map_or_else(|| entry.span(), |symbol| symbol.span),
+                        SymbolRole::Equation
+                    )
                 } else {
-                    entry.span()
+                    (entry.span(), SymbolRole::Declaration)
                 };
                 let name_span = lexer.map_or_else(|| entry.span(), |symbol| symbol.name_span);
-                Some(SymbolSpan { name, span, name_span })
+                Some(SymbolSpan { name, span, name_span, role })
             })
             .collect()
     }
@@ -180,6 +190,7 @@ impl Analysis {
                             start: name.span.start as u32,
                             end: name.span.end as u32,
                         },
+                        role: SymbolRole::Declaration
                     });
                 }
             } else if token.token == Token::Identifier
@@ -194,7 +205,8 @@ impl Analysis {
                 symbols.push(SymbolSpan {
                     name: token.content.clone(),
                     span,
-                    name_span: span
+                    name_span: span,
+                    role: SymbolRole::Equation
                 });
             }
         }
