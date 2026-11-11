@@ -10,7 +10,14 @@
  */
 
 use crate::server::backend::Backend;
-use tower_lsp_server::{LanguageServer, jsonrpc::Result, ls_types::{request::GotoDeclarationParams, *}};
+use tower_lsp_server::{
+    LanguageServer,
+    jsonrpc::Result,
+    ls_types::{
+        request::{GotoDeclarationParams, GotoDeclarationResponse},
+        *,
+    },
+};
 
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -112,7 +119,10 @@ impl LanguageServer for Backend {
         Ok(self.provide_definition(params))
     }
 
-    async  fn goto_declaration(&self, params: GotoDeclarationParams) -> Result<Option<request::GotoDeclarationResponse>> {
+    async fn goto_declaration(
+        &self,
+        params: GotoDeclarationParams,
+    ) -> Result<Option<GotoDeclarationResponse>> {
         Ok(self.provide_declaration(params))
     }
 }

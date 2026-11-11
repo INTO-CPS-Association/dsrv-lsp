@@ -339,7 +339,7 @@ impl Backend {
             .map(|symbol| symbol.name_span)?;
 
         let location = Location::new(uri_key, span_to_range(&rope, span));
-        Some(GotoDefinitionResponse::Scalar(location))
+        Some(GotoDeclarationResponse::Scalar(location))
     }
 
     // Helper function to create diagnostics from error message and range
@@ -674,7 +674,7 @@ mod test {
         let uri = fixtures::create_URI_path();
         backend.change(uri.clone(), text).await;
 
-        let response = backend.provide_declaration(GotoDefinitionParams {
+        let response = backend.provide_declaration(GotoDeclarationParams {
             text_document_position_params: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier { uri },
                 position: position_of_nth(text, needle, occurrence),
@@ -684,7 +684,7 @@ mod test {
         })?;
 
         match response {
-            GotoDefinitionResponse::Scalar(location) => Some(location.range),
+            GotoDeclarationResponse::Scalar(location) => Some(location.range),
             _ => panic!("expected a single location"),
         }
     }
@@ -1576,7 +1576,8 @@ mod test {
 
         assert_eq!(
             declaration_at_nth(text, "value", 0).await,
-            None
+            None,
+            "a stream defined only by an equation has no declaration"
         );
     }
 }
