@@ -20,6 +20,7 @@ use crate::utils::byte_to_pos;
 use crate::utils::pos_to_offset;
 use dashmap::DashMap;
 use ropey::Rope;
+use tower_lsp_server::ls_types::GotoDefinitionResponse::Scalar;
 use tower_lsp_server::{Client, ls_types::*};
 use trustworthiness_checker::Declaration;
 use trustworthiness_checker::{
@@ -295,6 +296,36 @@ impl Backend {
         }
 
         Some(DocumentSymbolResponse::Nested(result))
+    }
+
+    pub fn provide_definition(&self, params: GotoDefinitionParams) -> Option<GotoDefinitionResponse> {
+        let pos = params.text_document_position_params;
+        let uri_key = pos.text_document.uri;
+        let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
+        let rope = self.document_map.get(&uri_key)?.clone();
+        let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
+
+        let name = analysis
+            .symbol_at_offset(pos_offset)
+            .map(|symbol| symbol.name.clone())
+            .or_else(|| match analysis.node_at_offset(pos_offset)?.view() {
+                ExprView::Var(variable)
+                | ExprView::SIndex(variable, _)
+                | ExprView::MonitoredAt(variable, _) => Some(variable.name()),
+                _ => None,
+            })?;
+
+        if analysis.is_lambda_bound(&name, pos_offset) {
+            return None;
+        }
+
+        let span = analysis.symbol_spans
+            .iter()
+            .find(|symbol| { symbol.name == name })
+            .map(|symbol| { symbol.name_span });
+
+        let location = Location::new(uri_key, span_to_range(&rope, span?));
+        Some(GotoDefinitionResponse::Scalar(location))
     }
 
     // Helper function to create diagnostics from error message and range
@@ -583,6 +614,27 @@ mod test {
             Some(DocumentSymbolResponse::Nested(symbols)) => symbols,
             Some(DocumentSymbolResponse::Flat(_)) => panic!("expected a nested response"),
             None => panic!("document_symbols returned None: the whole outline was discarded"),
+        }
+    }
+
+    async fn definition_at(text: &str, needle: &str) -> Option<Range> {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        backend.change(uri.clone(), text).await;
+
+        let response = backend.provide_definition(GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: position_of(text, needle),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        })?;
+
+        match response {
+            GotoDefinitionResponse::Scalar(location) => Some(location.range),
+            _ => panic!("expected a single location"),
         }
     }
 
@@ -1368,5 +1420,27 @@ mod test {
         let value = named(&symbols, "value");
 
         assert_eq!(value.detail.as_deref(), Some("Int"));
+    }
+
+    #[apply(async_test)]
+    async fn a_lambda_parameter_does_not_resolve_to_a_stream_of_the_same_name() {
+        let text = fixtures::input_lambda_shadows_an_input();
+
+        assert_eq!(
+            definition_at(text, "x * 2").await,
+            None,
+            "a name bound by the lambda must not resolve to `in x`"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn the_lambda_guard_leaves_ordinary_references_alone() {
+        let text = fixtures::input_lambda_shadows_an_input();
+
+        let range = definition_at(text, "samples)")
+            .await
+            .expect("samples resolves to its declaration");
+
+        assert_eq!(range.start.line, 0);
     }
 }
