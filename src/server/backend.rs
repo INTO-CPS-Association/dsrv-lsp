@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::lang::analyser::Analysis;
+use crate::lang::analyser::SymbolRole;
 use crate::lang::syntax::completions_list::*;
 use crate::lang::syntax::lexer::*;
 use crate::utils::byte_to_pos;
@@ -304,13 +305,13 @@ impl Backend {
         let rope = self.document_map.get(&uri_key)?.clone();
         let pos_offset = pos_to_offset(pos.position, &rope).unwrap_or_default();
 
-        let name = analysis
+        let (name, role) = analysis
             .symbol_at_offset(pos_offset)
-            .map(|symbol| symbol.name.clone())
+            .map(|symbol| (symbol.name.clone(), Some(symbol.role.clone())))
             .or_else(|| match analysis.node_at_offset(pos_offset)?.view() {
                 ExprView::Var(variable)
                 | ExprView::SIndex(variable, _)
-                | ExprView::MonitoredAt(variable, _) => Some(variable.name()),
+                | ExprView::MonitoredAt(variable, _) => Some((variable.name(), None)),
                 _ => None,
             })?;
 
@@ -318,9 +319,19 @@ impl Backend {
             return None;
         }
 
+        let target_role = match role {
+            Some(SymbolRole::Equation) => SymbolRole::Declaration,
+            _ => SymbolRole::Equation
+        };
+
         let span = analysis.symbol_spans
             .iter()
-            .find(|symbol| { symbol.name == name })
+            .find(|symbol| { symbol.name == name && symbol.role == target_role })
+            .or_else(|| {
+                analysis.symbol_spans
+                    .iter()
+                    .find(|symbol| { symbol.name == name })  
+            })
             .map(|symbol| { symbol.name_span });
 
         let location = Location::new(uri_key, span_to_range(&rope, span?));
