@@ -59,6 +59,8 @@ impl LanguageServer for Backend {
                     work_done_progress_options: Default::default(),
                 })),
 
+                inlay_hint_provider: Some(OneOf::Left(true)),
+
                 ..ServerCapabilities::default()
             },
             ..Default::default()
@@ -124,6 +126,10 @@ impl LanguageServer for Backend {
         params: GotoDeclarationParams,
     ) -> Result<Option<GotoDeclarationResponse>> {
         Ok(self.provide_declaration(params))
+    }
+
+    async fn inlay_hint(&self, params: InlayHintParams) -> Result<Option<Vec<InlayHint>>> {
+        Ok(self.provide_inlay_hints(params))
     }
 }
 

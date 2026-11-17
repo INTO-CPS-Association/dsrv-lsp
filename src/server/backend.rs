@@ -346,6 +346,42 @@ impl Backend {
     async fn logger(&self, mes: String, level: MessageType) {
         self.client.log_message(level, mes).await;
     }
+
+    pub fn provide_inlay_hints(&self, params: InlayHintParams) -> Option<Vec<InlayHint>> {
+        let doc = params.text_document;
+        let uri_key = doc.uri;
+        let analysis = Arc::clone(self.analysis_map.get(&uri_key)?.value());
+        let rope = self.document_map.get(&uri_key)?.clone();
+
+        let hints = analysis
+            .symbol_spans
+            .iter()
+            .filter(|symbol| symbol.role == SymbolRole::Equation)
+            .filter_map(|symbol| {
+                let variable = VarName::new(&symbol.name);
+                let VariableType::Inferred(ty) = variable_type(&analysis, &variable) else {
+                    return None;
+                };
+                let position = byte_to_pos(&rope, symbol.name_span.end as usize)?;
+                if !range_contains(params.range, position) {
+                    return None;
+                }
+
+                Some(InlayHint {
+                    position,
+                    label: InlayHintLabel::String(format!(": {ty}")),
+                    kind: Some(InlayHintKind::TYPE),
+                    text_edits: None,
+                    tooltip: None,
+                    padding_left: None,
+                    padding_right: None,
+                    data: None,
+                })
+            })
+            .collect();
+
+        Some(hints)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -572,12 +608,16 @@ fn create_document_symbol(
     }
 }
 
+fn range_contains(range: Range, position: Position) -> bool {
+    range.start <= position && position <= range.end
+}
+
 #[cfg(test)]
 mod test {
     use macro_rules_attribute::apply;
     use trustworthiness_checker::async_test;
 
-    use crate::fixtures;
+    use crate::{fixtures, server::backend};
 
     use super::*;
 
@@ -687,6 +727,40 @@ mod test {
             GotoDeclarationResponse::Scalar(location) => Some(location.range),
             _ => panic!("expected a single location"),
         }
+    }
+
+    fn whole_document(text: &str) -> Range {
+        let past_the_end = text.lines().count() as u32;
+        Range::new(Position::new(0, 0), Position::new(past_the_end, 0))
+    }
+
+    async fn inlay_hints_in(text: &str, range: Range) -> Vec<InlayHint> {
+        let service = fixtures::create_LSP_service();
+        let backend = service.inner();
+        let uri = fixtures::create_URI_path();
+        backend.change(uri.clone(), text).await;
+
+        backend
+            .provide_inlay_hints(InlayHintParams {
+                text_document: TextDocumentIdentifier { uri },
+                range,
+                work_done_progress_params: Default::default(),
+            })
+            .unwrap_or_default()
+    }
+
+    async fn inlay_hints_of(text: &str) -> Vec<InlayHint> {
+        inlay_hints_in(text, whole_document(text)).await
+    }
+
+    fn placed_lables(hints: &[InlayHint]) -> Vec<(Position, String)> {
+        hints
+            .iter()
+            .map(|hint| match &hint.label {
+                InlayHintLabel::String(label) => (hint.position, label.clone()),
+                InlayHintLabel::LabelParts(_) => panic!("expected a plain string label"),
+            })
+            .collect()
     }
 
     fn named<'a>(symbols: &'a [DocumentSymbol], name: &str) -> &'a DocumentSymbol {
@@ -1578,6 +1652,77 @@ mod test {
             declaration_at_nth(text, "value", 0).await,
             None,
             "a stream defined only by an equation has no declaration"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn an_equation_without_a_declaration_gets_its_inferred_type() {
+        let text = fixtures::input_inferred_from_annotated_inputs();
+        let hints = inlay_hints_of(text).await;
+
+        assert_eq!(
+            placed_lables(&hints),
+            vec![
+                (Position::new(3, 5), ": Int".to_owned()),
+                (Position::new(4, 7), ": Int".to_owned()),
+                (Position::new(5, 8), ": Str".to_owned()),
+                (Position::new(6, 5), ": List<Bool>".to_owned()),
+            ]
+        );
+
+        assert!(
+            hints
+                .iter()
+                .all(|hint| hint.kind == Some(InlayHintKind::TYPE))
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_fully_declared_model_gets_no_hints() {
+        let hints = inlay_hints_of(fixtures::input_counter()).await;
+        assert!(
+            hints.is_empty(),
+            "a fully declared model needs no hints, got {:?}",
+            placed_lables(&hints)
+        );
+    }
+
+    #[apply(async_test)]
+    async fn hints_outside_the_requested_range_are_left_out() {
+        let text = fixtures::input_inferred_from_annotated_inputs();
+
+        let hints = inlay_hints_in(text, Range::new(Position::new(4, 0), Position::new(4, 100))).await;
+
+        assert_eq!(
+            placed_lables(&hints),
+            vec![(Position::new(4, 7), ": Int".to_owned())]
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_multi_line_range_keeps_hints_whose_column_precedes_its_start() {
+        let text = fixtures::input_inferred_from_annotated_inputs();
+
+        let hints = inlay_hints_in(text, Range::new(Position::new(4, 6), Position::new(6, 20))).await;
+
+        assert_eq!(
+            placed_lables(&hints),
+            vec![
+                (Position::new(4, 7), ": Int".to_owned()),
+                (Position::new(5, 8), ": Str".to_owned()),
+                (Position::new(6, 5), ": List<Bool>".to_owned()),
+            ]
+        );
+    }
+
+    #[apply(async_test)]
+    async fn a_model_that_does_not_type_check_gets_no_hints() {
+        let hints = inlay_hints_of("in x: Int\nin y: Str\nvalue = x + y").await;
+
+        assert!(
+            hints.is_empty(),
+            "a model that does not type check needs no hints, got {:?}",
+            placed_lables(&hints)
         );
     }
 }
