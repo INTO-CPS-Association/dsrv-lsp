@@ -617,7 +617,7 @@ mod test {
     use macro_rules_attribute::apply;
     use trustworthiness_checker::async_test;
 
-    use crate::{fixtures, server::backend};
+    use crate::{fixtures};
 
     use super::*;
 
