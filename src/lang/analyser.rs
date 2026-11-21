@@ -12,7 +12,10 @@
 use std::{cmp::Reverse, str::FromStr};
 
 use crate::{
-    lang::syntax::lexer::{Token, tokenize},
+    lang::{
+        docs::DocComments,
+        syntax::lexer::{Token, tokenize},
+    },
     utils::byte_to_pos,
 };
 use regex::Regex;
@@ -31,14 +34,14 @@ use trustworthiness_checker::lang::dsrv::{
 /// A source symbol whose span is not exposed by the checker AST.
 ///
 /// The checker owns expression spans. Declaration and assignment-LHS spans are
-/// parser-local, so this index keeps only the source name and its span for
-/// those two editor cases.
+/// parser-local.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SymbolSpan {
     pub name: String,
     pub span: Span,
-    pub name_span: Span,  // span of the declaration name only ("in x" -> 3..4)
-    pub role: SymbolRole, // declaration (in, out, aux) or equation
+    pub name_span: Span,     // span of the declaration name only ("in x" -> 3..4)
+    pub role: SymbolRole,    // declaration (in, out, aux) or equation
+    pub doc: Option<String>, // documentation
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -163,11 +166,13 @@ impl Analysis {
                     (entry.span(), SymbolRole::Declaration)
                 };
                 let name_span = lexer.map_or_else(|| entry.span(), |symbol| symbol.name_span);
+                let doc = lexer.and_then(|symbol| symbol.doc.clone());
                 Some(SymbolSpan {
                     name,
                     span,
                     name_span,
                     role,
+                    doc,
                 })
             })
             .collect()
@@ -175,6 +180,7 @@ impl Analysis {
 
     fn symbol_spans(source: &str) -> Vec<SymbolSpan> {
         let tokens = tokenize(source);
+        let docs = DocComments::extract(source);
         let mut symbols = Vec::new();
 
         for (index, token) in tokens.iter().enumerate() {
@@ -198,6 +204,7 @@ impl Analysis {
                             end: name.span.end as u32,
                         },
                         role: SymbolRole::Declaration,
+                        doc: docs.for_item_at(source, token.span.start),
                     });
                 }
             } else if token.token == Token::Identifier
@@ -214,6 +221,7 @@ impl Analysis {
                     span,
                     name_span: span,
                     role: SymbolRole::Equation,
+                    doc: docs.for_item_at(source, token.span.start),
                 });
             }
         }
@@ -756,5 +764,22 @@ allPositive = List.fold(\acc: Bool, x: Int -> acc && (x > 0), true, samples)
         assert!(analysis.typed.is_none());
         assert!(!analysis.diags.is_empty());
         assert!(analysis.spec.as_ref().unwrap().nodes().next().is_some());
+    }
+
+    #[test]
+    fn a_documented_declaration_carries_its_doc_into_the_analysis() {
+        let source = "/// The sensor reading.\nin x: Int\nout z: Int\nz = x + 1";
+        let analysis = Analysis::analyze_sync(source);
+
+        let find = |name: &str| {
+            analysis
+                .symbol_spans
+                .iter()
+                .find(|symbol| symbol.name == name)
+                .unwrap_or_else(|| panic!("{name} is a symbol"))
+        };
+
+        assert_eq!(find("x").doc.as_deref(), Some("The sensor reading."));
+        assert_eq!(find("z").doc, None);
     }
 }

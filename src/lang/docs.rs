@@ -73,6 +73,12 @@ impl DocComments {
         collected.reverse();
         Some(collected.join("\n"))
     }
+
+    /// The documentation attached to an item beginning at `offset`.
+    pub fn for_item_at(&self, source: &str, offset: usize) -> Option<String> {
+        let line = source[..offset].matches("\n").count() as u32;
+        self.for_item_at_line(line)
+    }
 }
 
 pub fn is_doc_marker(content: &str) -> bool {
