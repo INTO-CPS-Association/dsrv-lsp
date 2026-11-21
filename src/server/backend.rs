@@ -617,7 +617,7 @@ mod test {
     use macro_rules_attribute::apply;
     use trustworthiness_checker::async_test;
 
-    use crate::{fixtures};
+    use crate::fixtures;
 
     use super::*;
 
@@ -1691,7 +1691,8 @@ mod test {
     async fn hints_outside_the_requested_range_are_left_out() {
         let text = fixtures::input_inferred_from_annotated_inputs();
 
-        let hints = inlay_hints_in(text, Range::new(Position::new(4, 0), Position::new(4, 100))).await;
+        let hints =
+            inlay_hints_in(text, Range::new(Position::new(4, 0), Position::new(4, 100))).await;
 
         assert_eq!(
             placed_lables(&hints),
@@ -1703,7 +1704,8 @@ mod test {
     async fn a_multi_line_range_keeps_hints_whose_column_precedes_its_start() {
         let text = fixtures::input_inferred_from_annotated_inputs();
 
-        let hints = inlay_hints_in(text, Range::new(Position::new(4, 6), Position::new(6, 20))).await;
+        let hints =
+            inlay_hints_in(text, Range::new(Position::new(4, 6), Position::new(6, 20))).await;
 
         assert_eq!(
             placed_lables(&hints),

@@ -10,4 +10,5 @@
  */
 
 pub mod analyser;
+pub mod docs;
 pub mod syntax;

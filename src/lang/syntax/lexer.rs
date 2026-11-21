@@ -289,6 +289,30 @@ pub fn filter_suggestions(cursor_offset: usize, tokens: &[TokenData]) -> Vec<&'s
     }
 }
 
+pub fn get_comments(text: &str) -> Vec<TokenData> {
+    let mut lexer = Token::lexer(text);
+    let mut tokens = Vec::new();
+
+    while let Some(token_result) = lexer.next() {
+        match token_result {
+            Ok(t) => {
+                // Capture comments only
+                if t == Token::LineComment || t == Token::BlockComment {
+                    let span = lexer.span();
+                    let content = lexer.slice().to_string();
+                    tokens.push(TokenData {
+                        token: t,
+                        content,
+                        span,
+                    });
+                }
+            }
+            Err(_) => {}
+        }
+    }
+    tokens
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -490,5 +514,55 @@ mod test {
             "Expected [\"map method\"], but got {:?}",
             filter
         );
+    }
+
+    #[test]
+    fn test_get_comments() {
+        let input = fixtures::input_with_comments();
+        let tokens = get_comments(input);
+
+        assert!(tokens.len() == 3, "Expected 3 tokens, got {}", tokens.len());
+
+        assert!(
+            matches!(tokens[0].token, Token::LineComment),
+            "Expected line comment token, got {:?}",
+            tokens[0].token
+        );
+
+        assert!(
+            tokens[0].content == "/// input",
+            "Expected '/// input' token, got {:?}",
+            tokens[0].content
+        );
+
+        assert!(tokens[0].span.start == input.find("///").unwrap(),);
+
+        assert!(
+            matches!(tokens[1].token, Token::LineComment),
+            "Expected line comment token, got {:?}",
+            tokens[1].token
+        );
+
+        assert!(
+            tokens[1].content == "// output",
+            "Expected '// output' token, got {:?}",
+            tokens[1].content
+        );
+
+        assert!(tokens[1].span.start == input.find("// output").unwrap(),);
+
+        assert!(
+            matches!(tokens[2].token, Token::BlockComment),
+            "Expected block comment token, got {:?}",
+            tokens[2].token
+        );
+
+        assert!(
+            tokens[2].content == "(*equation*)",
+            "Expected '(*equation*)' token, got {:?}",
+            tokens[2].content
+        );
+
+        assert!(tokens[2].span.start == input.find("(*").unwrap(),);
     }
 }

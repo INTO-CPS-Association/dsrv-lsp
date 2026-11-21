@@ -200,3 +200,14 @@ doubled = List.map(\x: Int -> x * 2, samples)
 pub fn input_counter() -> &'static str {
     "in x: Int\nout z: Int\nz = default(z[1], 0) + x"
 }
+
+#[allow(dead_code)]
+pub fn input_with_comments() -> &'static str {
+    r#"in samples: List<Int>
+/// input
+in x: Int
+out doubled: List<Int> // output
+(*equation*)
+doubled = List.map(\x: Int -> x * 2, samples)
+"#
+}
