@@ -524,12 +524,15 @@ fn create_variable_hover(
         ("stream", "stream")
     };
 
+    let documentation = stream_documentation(analysis, variable);
+    let text = documentation.as_deref().unwrap_or(stream_text);
+
     let mut info = format!(
         "```dsrv\n{} {}{}\n```\n---\n{}",
         stream_kind,
         variable.name(),
         type_str,
-        stream_text
+        text
     );
 
     if matches!(resolved, VariableType::Inferred(_)) {
@@ -610,6 +613,22 @@ fn create_document_symbol(
 
 fn range_contains(range: Range, position: Position) -> bool {
     range.start <= position && position <= range.end
+}
+
+fn stream_documentation(analysis: &Analysis, variable: &VarName) -> Option<String> {
+    let name = variable.name();
+
+    let parts: Vec<&str> = [SymbolRole::Declaration, SymbolRole::Equation]
+        .into_iter()
+        .filter_map(|role| analysis.symbol_named(&name, Some(role)))
+        .filter_map(|symbol| symbol.doc.as_deref())
+        .collect();
+
+    if parts.is_empty() {
+        return None;
+    }
+
+    Some(parts.join("\n\n"))
 }
 
 #[cfg(test)]
@@ -1726,5 +1745,58 @@ mod test {
             "a model that does not type check needs no hints, got {:?}",
             placed_lables(&hints)
         );
+    }
+
+    #[apply(async_test)]
+    async fn hover_shows_documentation_written_above_a_declaration() {
+        let text = "/// The sensor reading.\nin x: Int\nout z: Int\nz = x + 1";
+
+        let hover = hover_text_at(text, "x: Int").await.expect("hover on x");
+        assert!(hover.contains("The sensor reading."), "{hover}");
+
+        let builtin = get_builtin_by_label("in")
+            .expect("in is a builtin")
+            .documentation;
+        assert!(
+            !hover.contains(builtin),
+            "the author's description should stand alone: {hover}"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn hover_shows_documentation_written_above_an_equation() {
+        let text = "in x: Int\nout z: Int\n/// One more than the reading.\nz = x + 1";
+
+        let hover = hover_text_at(text, "z = x").await.expect("hover on z");
+        assert!(hover.contains("One more than the reading."), "{hover}");
+    }
+
+    #[apply(async_test)]
+    async fn hover_shows_both_descriptions_declaration_first() {
+        let text = "in x: Int\n\
+                          /// The running total.\n\
+                          out z: Int\n\
+                          \n\
+                          /// Adds the reading to the previous total.\n\
+                          z = default(z[1], 0) + x";
+
+        let hover = hover_text_at(text, "z: Int").await.expect("hover on z");
+
+        assert!(
+            hover.contains("The running total.\n\nAdds the reading to the previous total."),
+            "{hover}"
+        );
+    }
+
+    #[apply(async_test)]
+    async fn hover_on_an_undocumented_stream_still_explains_the_keyword() {
+        let text = "in x: Int\nout z: Int\nz = x + 1";
+
+        let hover = hover_text_at(text, "z: Int").await.expect("hover on z");
+
+        let builtin = get_builtin_by_label("out")
+            .expect("out is a builtin")
+            .documentation;
+        assert!(hover.contains(builtin), "{hover}");
     }
 }
