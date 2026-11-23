@@ -173,6 +173,7 @@ impl Backend {
                         Some(ty) => format!("{ty} · {}", var.detail),
                         None => var.detail.clone(),
                     }),
+                    documentation: var.doc.as_ref().and_then(|doc| documentation!(doc)),
                     ..Default::default()
                 }),
         );
@@ -390,6 +391,7 @@ pub struct Variables {
     pub kind: CompletionItemKind,
     pub trigger_context: &'static [&'static str],
     pub type_anno: Option<String>,
+    pub doc: Option<String>,
     pub detail: String,
 }
 
@@ -442,6 +444,7 @@ fn get_all_declared_symbols(analysis: &Analysis) -> Vec<Variables> {
             kind: CompletionItemKind::VARIABLE,
             trigger_context: &["expr", "input_stream", "variable"],
             type_anno: variable_type(analysis, name).name().map(str::to_owned),
+            doc: stream_documentation(analysis, name),
             detail: "Input Stream".to_string(),
         };
         items.push(item);
@@ -452,6 +455,7 @@ fn get_all_declared_symbols(analysis: &Analysis) -> Vec<Variables> {
             kind: CompletionItemKind::VARIABLE,
             trigger_context: &["expr", "aux_stream", "variable"],
             type_anno: variable_type(analysis, name).name().map(str::to_owned),
+            doc: stream_documentation(analysis, name),
             detail: "Auxiliary internal stream variable".to_string(),
         };
         items.push(item);
@@ -464,6 +468,7 @@ fn get_all_declared_symbols(analysis: &Analysis) -> Vec<Variables> {
                 kind: CompletionItemKind::VARIABLE,
                 trigger_context: &["expr", "output_stream", "variable"],
                 type_anno: variable_type(analysis, name).name().map(str::to_owned),
+                doc: stream_documentation(analysis, name),
                 detail: "Output Stream".to_string(),
             };
             items.push(item);
@@ -813,6 +818,7 @@ mod test {
                 kind: CompletionItemKind::VARIABLE,
                 trigger_context: &["expr", "input_stream", "variable"],
                 type_anno: None,
+                doc: None,
                 detail: "Input Stream".to_string(),
             },
             Variables {
@@ -820,6 +826,7 @@ mod test {
                 kind: CompletionItemKind::VARIABLE,
                 trigger_context: &["expr", "input_stream", "variable"],
                 type_anno: None,
+                doc: None,
                 detail: "Input Stream".to_string(),
             },
             Variables {
@@ -827,6 +834,7 @@ mod test {
                 kind: CompletionItemKind::VARIABLE,
                 trigger_context: &["expr", "output_stream", "variable"],
                 type_anno: None,
+                doc: None,
                 detail: "Output Stream".to_string(),
             },
         ];
