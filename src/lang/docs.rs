@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use trustworthiness_checker::lang::dsrv::span::Span;
 
@@ -8,7 +8,6 @@ use crate::lang::syntax::lexer::get_comments;
 #[derive(Debug, Clone)]
 struct DocLine {
     content: String,
-    #[allow(dead_code)]
     span: Span,
 }
 
@@ -35,7 +34,7 @@ impl DocComments {
                     return None;
                 }
 
-                let line = source[..comment.span.start].matches('\n').count() as u32;
+                let line = line_of(source, comment.span.start);
 
                 Some((
                     line,
@@ -76,8 +75,49 @@ impl DocComments {
 
     /// The documentation attached to an item beginning at `offset`.
     pub fn for_item_at(&self, source: &str, offset: usize) -> Option<String> {
-        let line = source[..offset].matches("\n").count() as u32;
+        let line = line_of(source, offset);
         self.for_item_at_line(line)
+    }
+
+    /// The spans of the doc blocks that documented nothing.
+    pub fn unattached(&self, item_lines: &BTreeSet<u32>) -> Vec<Span> {
+        self.lines
+            .iter()
+            .filter_map(|(line, last)| {
+                let below = line + 1;
+
+                if self.lines.contains_key(&below) {
+                    return None;
+                }
+
+                if item_lines.contains(&below) {
+                    return None;
+                }
+
+                Some(Span {
+                    start: self.block_start_offset(*line, last),
+                    end: last.span.end,
+                })
+            })
+            .collect()
+    }
+
+    /// Where the block of doc lines ending at `last_line` begins.
+    fn block_start_offset(&self, last_line: u32, last: &DocLine) -> u32 {
+        let mut start = last.span.start;
+        let mut line = last_line;
+
+        while let Some(above) = line.checked_sub(1) {
+            match self.lines.get(&above) {
+                Some(doc) => {
+                    start = doc.span.start;
+                    line = above;
+                }
+                None => break,
+            }
+        }
+
+        start
     }
 }
 
@@ -90,6 +130,10 @@ pub fn strip_doc_marker(content: &str) -> &str {
     rest.strip_prefix(' ').unwrap_or(rest)
 }
 
+pub fn line_of(source: &str, offset: usize) -> u32 {
+    source[..offset].matches("\n").count() as u32
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -97,6 +141,10 @@ mod test {
     /// The documentation attached to the item on `line` of `source`.
     fn doc_at(source: &str, line: u32) -> Option<String> {
         DocComments::extract(source).for_item_at_line(line)
+    }
+
+    fn unattached_at(source: &str, item_lines: &[u32]) -> Vec<Span> {
+        DocComments::extract(source).unattached(&item_lines.iter().copied().collect())
     }
 
     #[test]
@@ -189,5 +237,50 @@ mod test {
     fn a_run_reaching_the_top_of_the_file_still_attaches() {
         let source = "/// First.\n/// Second.\nin x: Int";
         assert_eq!(doc_at(source, 2).as_deref(), Some("First.\nSecond."));
+    }
+
+    #[test]
+    fn a_block_at_the_end_of_the_file_attaches_to_nothing() {
+        let source = "in x: Int\n/// Nothing follows this.";
+        let spans = unattached_at(source, &[0]);
+
+        assert_eq!(spans.len(), 1, "{spans:?}");
+        assert_eq!(spans[0].start as usize, source.find("///").unwrap());
+    }
+
+    #[test]
+    fn a_blank_line_leaves_the_block_unattached() {
+        let source = "/// Not about x.\n\nin x: Int";
+        assert_eq!(unattached_at(source, &[2]).len(), 1);
+    }
+
+    #[test]
+    fn an_ordinary_comment_leaves_the_block_unattached() {
+        let source = "/// Not about x.\n// A note to self.\nin x: Int";
+        assert_eq!(unattached_at(source, &[2]).len(), 1);
+    }
+
+    #[test]
+    fn an_attached_block_is_not_reported() {
+        let source = "/// The sensor reading.\nin x: Int\nout z: Int\nz = x + 1";
+        assert!(unattached_at(source, &[1, 2, 3]).is_empty());
+    }
+
+    #[test]
+    fn a_three_line_block_is_reported_once_over_all_three() {
+        let source = "/// One.\n/// Two.\n/// Three.\n\nin x: Int";
+        let spans = unattached_at(source, &[4]);
+
+        assert_eq!(spans.len(), 1, "{spans:?}");
+
+        let last = source.find("/// Three.").unwrap();
+        assert_eq!(spans[0].start as usize, source.find("/// One.").unwrap());
+        assert_eq!(spans[0].end as usize, last + "/// Three.".len());
+    }
+
+    #[test]
+    fn a_file_level_comment_is_not_reported() {
+        let source = "//! What this specification does.\n\nin x: Int";
+        assert!(unattached_at(source, &[2]).is_empty());
     }
 }

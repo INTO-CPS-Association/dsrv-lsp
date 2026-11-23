@@ -9,11 +9,11 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use std::{cmp::Reverse, str::FromStr};
+use std::{cmp::Reverse, collections::BTreeSet, str::FromStr};
 
 use crate::{
     lang::{
-        docs::DocComments,
+        docs::{DocComments, line_of},
         syntax::lexer::{Token, tokenize},
     },
     utils::byte_to_pos,
@@ -78,6 +78,14 @@ impl Analysis {
 
     fn analyse_specification_inner(text: &str) -> Analysis {
         let lexer_symbol_spans = Self::symbol_spans(text);
+
+        let docs = DocComments::extract(text);
+
+        let lexer_item_lines: BTreeSet<u32> = lexer_symbol_spans
+            .iter()
+            .map(|symbol| line_of(text, symbol.span.start as usize))
+            .collect();
+
         let spec = match parse_str(text) {
             Ok(spec) => spec,
             Err(error) => {
@@ -85,13 +93,26 @@ impl Analysis {
                 return Analysis {
                     spec: None,
                     typed: None,
-                    diags: vec![Self::parse_diag(text, error)],
+                    diags: [
+                        vec![Self::parse_diag(text, error)],
+                        Self::doc_hints(text, &docs, &lexer_item_lines),
+                    ]
+                    .concat(),
                     symbol_spans: lexer_symbol_spans,
                 };
             }
         };
 
         let symbol_spans = Self::ast_symbol_spans(&spec, &lexer_symbol_spans);
+
+        let mut item_lines = lexer_item_lines;
+        item_lines.extend(
+            spec.declarations()
+                .iter()
+                .map(|entry| line_of(text, entry.span().start as usize)),
+        );
+
+        let doc_hints = Self::doc_hints(text, &docs, &item_lines);
 
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             match spec.clone().validate() {
@@ -104,7 +125,7 @@ impl Analysis {
             Ok((Ok(typed), warnings)) => Analysis {
                 spec: Some(spec),
                 typed: Some(typed),
-                diags: Self::warning_diags(text, &warnings),
+                diags: [Self::warning_diags(text, &warnings), doc_hints].concat(),
                 symbol_spans,
             },
             Ok((Err(errors), warnings)) => {
@@ -118,6 +139,7 @@ impl Analysis {
                         .iter()
                         .map(|warning| Self::create_warning_diag(&rope, warning)),
                 );
+                diags.extend(doc_hints);
                 Analysis {
                     spec: Some(spec),
                     typed: None,
@@ -135,7 +157,7 @@ impl Analysis {
                 Analysis {
                     spec: Some(spec),
                     typed: None,
-                    diags: vec![],
+                    diags: doc_hints,
                     symbol_spans,
                 }
             }
@@ -445,6 +467,21 @@ impl Analysis {
             Self::create_diag(warning.message(), range, DiagnosticSeverity::WARNING);
         diagnostic.code = Some(NumberOrString::String(warning.code().to_string()));
         diagnostic
+    }
+
+    fn doc_hints(text: &str, docs: &DocComments, item_lines: &BTreeSet<u32>) -> Vec<Diagnostic> {
+        docs.unattached(item_lines)
+            .into_iter()
+            .map(|span| {
+                Self::create_diag(
+                    "This doc comment documents nothing. A doc comment attaches to the \
+                         item on the line immediately below it; a blank line or an ordinary \
+                         `//` comment in between detaches it.",
+                    Self::span_range(text, span),
+                    DiagnosticSeverity::HINT,
+                )
+            })
+            .collect()
     }
 
     fn create_semantic_diag(rope: &Rope, error: &SemanticError) -> Diagnostic {
