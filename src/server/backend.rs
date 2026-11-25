@@ -199,7 +199,9 @@ impl Backend {
         let node = analysis.node_at_offset(pos_offset)?;
         let span = node.span();
         let label = match node.view() {
-            ExprView::Var(variable) => {
+            ExprView::Var(variable)
+            | ExprView::SIndex(variable, _)
+            | ExprView::MonitoredAt(variable, _) => {
                 return create_variable_hover(&analysis, variable, span, &rope);
             }
             ExprView::Val(SyntaxLiteral::Bool(value)) => {
@@ -217,9 +219,7 @@ impl Backend {
             ExprView::When(..) => "when",
             ExprView::Latch(..) => "latch",
             ExprView::Init(..) => "init",
-            ExprView::SIndex(..) => "SIndex",
             ExprView::If(..) => "If then else",
-            ExprView::MonitoredAt(..) => "Monitored_at",
             ExprView::Dist(..) => "dist",
             ExprView::List(..) => "List.",
             ExprView::LIndex(..) => "List.get",
