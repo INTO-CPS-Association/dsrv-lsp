@@ -95,7 +95,7 @@ impl Analysis {
                     typed: None,
                     diags: [
                         vec![Self::parse_diag(text, error)],
-                        Self::doc_hints(text, &docs, &lexer_item_lines),
+                        Self::doc_diags(text, &docs, &lexer_item_lines),
                     ]
                     .concat(),
                     symbol_spans: lexer_symbol_spans,
@@ -112,7 +112,7 @@ impl Analysis {
                 .map(|entry| line_of(text, entry.span().start as usize)),
         );
 
-        let doc_hints = Self::doc_hints(text, &docs, &item_lines);
+        let doc_diags = Self::doc_diags(text, &docs, &item_lines);
 
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             match spec.clone().validate() {
@@ -125,7 +125,7 @@ impl Analysis {
             Ok((Ok(typed), warnings)) => Analysis {
                 spec: Some(spec),
                 typed: Some(typed),
-                diags: [Self::warning_diags(text, &warnings), doc_hints].concat(),
+                diags: [Self::warning_diags(text, &warnings), doc_diags].concat(),
                 symbol_spans,
             },
             Ok((Err(errors), warnings)) => {
@@ -139,7 +139,7 @@ impl Analysis {
                         .iter()
                         .map(|warning| Self::create_warning_diag(&rope, warning)),
                 );
-                diags.extend(doc_hints);
+                diags.extend(doc_diags);
                 Analysis {
                     spec: Some(spec),
                     typed: None,
@@ -157,7 +157,7 @@ impl Analysis {
                 Analysis {
                     spec: Some(spec),
                     typed: None,
-                    diags: doc_hints,
+                    diags: doc_diags,
                     symbol_spans,
                 }
             }
@@ -469,17 +469,19 @@ impl Analysis {
         diagnostic
     }
 
-    fn doc_hints(text: &str, docs: &DocComments, item_lines: &BTreeSet<u32>) -> Vec<Diagnostic> {
+    fn doc_diags(text: &str, docs: &DocComments, item_lines: &BTreeSet<u32>) -> Vec<Diagnostic> {
         docs.unattached(item_lines)
             .into_iter()
             .map(|span| {
-                Self::create_diag(
+                let mut diagnostic = Self::create_diag(
                     "This doc comment documents nothing. A doc comment attaches to the \
                          item on the line immediately below it; a blank line or an ordinary \
                          `//` comment in between detaches it.",
                     Self::span_range(text, span),
-                    DiagnosticSeverity::HINT,
-                )
+                    DiagnosticSeverity::INFORMATION,
+                );
+                diagnostic.code = Some(NumberOrString::String("unattached-doc".to_owned()));
+                diagnostic
             })
             .collect()
     }
