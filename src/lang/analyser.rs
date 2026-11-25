@@ -105,12 +105,11 @@ impl Analysis {
 
         let symbol_spans = Self::ast_symbol_spans(&spec, &lexer_symbol_spans);
 
-        let mut item_lines = lexer_item_lines;
-        item_lines.extend(
-            spec.declarations()
-                .iter()
-                .map(|entry| line_of(text, entry.span().start as usize)),
-        );
+        let item_lines: BTreeSet<u32> = spec
+            .declarations()
+            .iter()
+            .map(|entry| line_of(text, entry.span().start as usize))
+            .collect();
 
         let doc_diags = Self::doc_diags(text, &docs, &item_lines);
 
@@ -820,5 +819,78 @@ allPositive = List.fold(\acc: Bool, x: Int -> acc && (x > 0), true, samples)
 
         assert_eq!(find("x").doc.as_deref(), Some("The sensor reading."));
         assert_eq!(find("z").doc, None);
+    }
+
+    #[test]
+    fn a_documented_type_alias_is_not_reported_as_documenting_nothing() {
+        let source = "use experimental::high_level_dsrv\n\
+                            /// A list of lists.\n\
+                            type NestedList<X> = List<List<X>>\n\
+                            in x: Int\n\
+                            out z: Int\n\
+                            z = x + 1";
+        let analysis = Analysis::analyze_sync(source);
+
+        assert!(
+            analysis.spec.is_some(),
+            "the source must parse: {:?}",
+            analysis.diags
+        );
+        assert!(
+            !analysis
+                .diags
+                .iter()
+                .any(|d| d.message.contains("documents nothing")),
+            "{:?}",
+            analysis.diags
+        );
+    }
+
+    #[test]
+    fn a_doc_diagnostic_never_displaces_the_real_problem() {
+        let source = "/// Documents nothing.\n\nin x: Int\nout z: Int\nz = x +";
+        let analysis = Analysis::analyze_sync(source);
+
+        assert!(analysis.diags.len() >= 2, "{:?}", analysis.diags);
+        assert!(
+            analysis.diags[0].message.starts_with("Syntax error"),
+            "{:?}",
+            analysis.diags
+        );
+    }
+
+    #[test]
+    fn an_unattached_doc_block_is_reported_once_as_information() {
+        let source = "/// Documents nothing.\n\nin x: Int\nout z: Int\nz = x + 1";
+        let analysis = Analysis::analyze_sync(source);
+
+        let reported: Vec<&Diagnostic> = analysis
+            .diags
+            .iter()
+            .filter(|d| d.code == Some(NumberOrString::String("unattached-doc".to_owned())))
+            .collect();
+
+        assert_eq!(reported.len(), 1, "{:?}", analysis.diags);
+        assert_eq!(reported[0].severity, Some(DiagnosticSeverity::INFORMATION));
+        assert_eq!(
+            reported[0].range,
+            Range::new(Position::new(0, 0), Position::new(0, 22))
+        );
+    }
+
+    #[test]
+    fn an_unattached_doc_block_is_reported_while_the_file_does_not_parse() {
+        let source = "/// Documents nothing.\n\nin x: Int\nout z: Int\nz = x +";
+        let analysis = Analysis::analyze_sync(source);
+
+        assert!(analysis.spec.is_none());
+        assert!(
+            analysis
+                .diags
+                .iter()
+                .any(|d| d.message.contains("documents nothing")),
+            "{:?}",
+            analysis.diags
+        );
     }
 }

@@ -1807,4 +1807,24 @@ mod test {
             .documentation;
         assert!(hover.contains(builtin), "{hover}");
     }
+
+    #[apply(async_test)]
+    async fn hover_on_an_indexed_reference_describes_the_stream() {
+        let text = "in reading: Int\n\
+                    /// The running total.\n\
+                    out total: Int\n\
+                    total = default(total[1], 0) + reading";
+
+        let hover = hover_text_at(text, "total[1]")
+            .await
+            .expect("hover on total[1]");
+
+        assert!(hover.contains("The running total."), "{hover}");
+        assert!(hover.contains("out total: Int"), "{hover}");
+
+        let operator = get_builtin_by_label("SIndex")
+            .expect("SIndex is a builtin")
+            .documentation;
+        assert!(!hover.contains(operator), "{hover}");
+    }
 }
