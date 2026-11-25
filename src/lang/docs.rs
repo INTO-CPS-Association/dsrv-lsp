@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use trustworthiness_checker::lang::dsrv::span::Span;
 
@@ -53,7 +53,7 @@ impl DocComments {
     }
 
     /// The documentation attached to an item beginning on `line`.
-    pub fn for_item_at_line(&self, line: u32) -> Option<String> {
+    fn for_item_at_line(&self, line: u32) -> Option<String> {
         let mut collected: Vec<&str> = Vec::new();
         let mut current = line.checked_sub(1)?;
 
@@ -80,7 +80,9 @@ impl DocComments {
     }
 
     /// The spans of the doc blocks that documented nothing.
-    pub fn unattached(&self, item_lines: &BTreeSet<u32>) -> Vec<Span> {
+    pub fn unattached(&self, source: &str) -> Vec<Span> {
+        let lines: Vec<&str> = source.lines().collect();
+
         self.lines
             .iter()
             .filter_map(|(line, last)| {
@@ -90,7 +92,7 @@ impl DocComments {
                     return None;
                 }
 
-                if item_lines.contains(&below) {
+                if !holds_no_item(lines.get(below as usize).copied()) {
                     return None;
                 }
 
@@ -121,17 +123,27 @@ impl DocComments {
     }
 }
 
-pub fn is_doc_marker(content: &str) -> bool {
+fn is_doc_marker(content: &str) -> bool {
     content.starts_with("///") && !content.starts_with("////")
 }
 
-pub fn strip_doc_marker(content: &str) -> &str {
+fn strip_doc_marker(content: &str) -> &str {
     let rest = &content[3..];
     rest.strip_prefix(' ').unwrap_or(rest)
 }
 
-pub fn line_of(source: &str, offset: usize) -> u32 {
+fn line_of(source: &str, offset: usize) -> u32 {
     source[..offset].matches("\n").count() as u32
+}
+
+fn holds_no_item(line: Option<&str>) -> bool {
+    match line {
+        None => true,
+        Some(text) => {
+            let text = text.trim_start();
+            text.is_empty() || text.starts_with("//") || text.starts_with("(*")
+        }
+    }
 }
 
 #[cfg(test)]
@@ -143,8 +155,8 @@ mod test {
         DocComments::extract(source).for_item_at_line(line)
     }
 
-    fn unattached_at(source: &str, item_lines: &[u32]) -> Vec<Span> {
-        DocComments::extract(source).unattached(&item_lines.iter().copied().collect())
+    fn unattached_of(source: &str) -> Vec<Span> {
+        DocComments::extract(source).unattached(source)
     }
 
     #[test]
@@ -242,7 +254,7 @@ mod test {
     #[test]
     fn a_block_at_the_end_of_the_file_attaches_to_nothing() {
         let source = "in x: Int\n/// Nothing follows this.";
-        let spans = unattached_at(source, &[0]);
+        let spans = unattached_of(source);
 
         assert_eq!(spans.len(), 1, "{spans:?}");
         assert_eq!(spans[0].start as usize, source.find("///").unwrap());
@@ -251,25 +263,25 @@ mod test {
     #[test]
     fn a_blank_line_leaves_the_block_unattached() {
         let source = "/// Not about x.\n\nin x: Int";
-        assert_eq!(unattached_at(source, &[2]).len(), 1);
+        assert_eq!(unattached_of(source).len(), 1);
     }
 
     #[test]
     fn an_ordinary_comment_leaves_the_block_unattached() {
         let source = "/// Not about x.\n// A note to self.\nin x: Int";
-        assert_eq!(unattached_at(source, &[2]).len(), 1);
+        assert_eq!(unattached_of(source).len(), 1);
     }
 
     #[test]
     fn an_attached_block_is_not_reported() {
         let source = "/// The sensor reading.\nin x: Int\nout z: Int\nz = x + 1";
-        assert!(unattached_at(source, &[1, 2, 3]).is_empty());
+        assert!(unattached_of(source).is_empty());
     }
 
     #[test]
     fn a_three_line_block_is_reported_once_over_all_three() {
         let source = "/// One.\n/// Two.\n/// Three.\n\nin x: Int";
-        let spans = unattached_at(source, &[4]);
+        let spans = unattached_of(source);
 
         assert_eq!(spans.len(), 1, "{spans:?}");
 
@@ -281,6 +293,20 @@ mod test {
     #[test]
     fn a_file_level_comment_is_not_reported() {
         let source = "//! What this specification does.\n\nin x: Int";
-        assert!(unattached_at(source, &[2]).is_empty());
+        assert!(unattached_of(source).is_empty());
+    }
+
+    #[test]
+    fn a_doc_above_a_def_is_not_reported() {
+        let source = "/// A moving average over three ticks.\n\
+                            def smooth(s: Int) = (s + s[1] + s[2]) / 3";
+        assert!(unattached_of(source).is_empty());
+    }
+
+    #[test]
+    fn a_doc_above_a_generic_type_alias_is_not_reported() {
+        let source = "/// A list of lists.\n\
+                            type NestedList<X> = List<List<X>>";
+        assert!(unattached_of(source).is_empty());
     }
 }

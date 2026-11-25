@@ -9,11 +9,11 @@
  * property of the INTO-CPS Association and used under the ICAPL (GPL Mode).
  */
 
-use std::{cmp::Reverse, collections::BTreeSet, str::FromStr};
+use std::{cmp::Reverse, str::FromStr};
 
 use crate::{
     lang::{
-        docs::{DocComments, line_of},
+        docs::DocComments,
         syntax::lexer::{Token, tokenize},
     },
     utils::byte_to_pos,
@@ -79,12 +79,7 @@ impl Analysis {
     fn analyse_specification_inner(text: &str) -> Analysis {
         let lexer_symbol_spans = Self::symbol_spans(text);
 
-        let docs = DocComments::extract(text);
-
-        let lexer_item_lines: BTreeSet<u32> = lexer_symbol_spans
-            .iter()
-            .map(|symbol| line_of(text, symbol.span.start as usize))
-            .collect();
+        let doc_diags = Self::doc_diags(text);
 
         let spec = match parse_str(text) {
             Ok(spec) => spec,
@@ -93,25 +88,13 @@ impl Analysis {
                 return Analysis {
                     spec: None,
                     typed: None,
-                    diags: [
-                        vec![Self::parse_diag(text, error)],
-                        Self::doc_diags(text, &docs, &lexer_item_lines),
-                    ]
-                    .concat(),
+                    diags: [vec![Self::parse_diag(text, error)], doc_diags].concat(),
                     symbol_spans: lexer_symbol_spans,
                 };
             }
         };
 
         let symbol_spans = Self::ast_symbol_spans(&spec, &lexer_symbol_spans);
-
-        let item_lines: BTreeSet<u32> = spec
-            .declarations()
-            .iter()
-            .map(|entry| line_of(text, entry.span().start as usize))
-            .collect();
-
-        let doc_diags = Self::doc_diags(text, &docs, &item_lines);
 
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             match spec.clone().validate() {
@@ -468,8 +451,9 @@ impl Analysis {
         diagnostic
     }
 
-    fn doc_diags(text: &str, docs: &DocComments, item_lines: &BTreeSet<u32>) -> Vec<Diagnostic> {
-        docs.unattached(item_lines)
+    fn doc_diags(text: &str) -> Vec<Diagnostic> {
+        DocComments::extract(text)
+            .unattached(text)
             .into_iter()
             .map(|span| {
                 let mut diagnostic = Self::create_diag(
@@ -819,31 +803,6 @@ allPositive = List.fold(\acc: Bool, x: Int -> acc && (x > 0), true, samples)
 
         assert_eq!(find("x").doc.as_deref(), Some("The sensor reading."));
         assert_eq!(find("z").doc, None);
-    }
-
-    #[test]
-    fn a_documented_type_alias_is_not_reported_as_documenting_nothing() {
-        let source = "use experimental::high_level_dsrv\n\
-                            /// A list of lists.\n\
-                            type NestedList<X> = List<List<X>>\n\
-                            in x: Int\n\
-                            out z: Int\n\
-                            z = x + 1";
-        let analysis = Analysis::analyze_sync(source);
-
-        assert!(
-            analysis.spec.is_some(),
-            "the source must parse: {:?}",
-            analysis.diags
-        );
-        assert!(
-            !analysis
-                .diags
-                .iter()
-                .any(|d| d.message.contains("documents nothing")),
-            "{:?}",
-            analysis.diags
-        );
     }
 
     #[test]
