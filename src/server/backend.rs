@@ -129,11 +129,7 @@ impl Backend {
             }
         }
 
-        if analysis.spec.is_some() {
-            self.analysis_map.insert(uri.clone(), Arc::new(analysis));
-        } else {
-            self.analysis_map.remove(&uri);
-        }
+        self.analysis_map.insert(uri.clone(), Arc::new(analysis));
 
         self.client
             .publish_diagnostics(uri.clone(), diags, None)
@@ -511,7 +507,9 @@ fn create_variable_hover(
     span: Span,
     rope: &Rope,
 ) -> Option<Hover> {
-    let spec = analysis.spec.as_ref()?;
+    let Some(spec) = analysis.spec.as_ref() else {
+        return create_degraded_variable_hover(analysis, variable, span, rope);
+    };
 
     let resolved = variable_type(analysis, variable);
     let type_str = resolved
@@ -532,19 +530,35 @@ fn create_variable_hover(
     let documentation = stream_documentation(analysis, variable);
     let text = documentation.as_deref().unwrap_or(stream_text);
 
-    let mut info = format!(
-        "```dsrv\n{} {}{}\n```\n---\n{}",
-        stream_kind,
-        variable.name(),
-        type_str,
-        text
-    );
+    let mut notes = Vec::new();
 
     if matches!(resolved, VariableType::Inferred(_)) {
-        info.push_str("\n\n*Type inferred; not written in the source.*");
+        notes.push("*Type inferred; not written in the source.*");
     }
 
+    let info = build_variable_hover_string(stream_kind, variable.name(), type_str, text, notes);
+
     Some(create_hover_variable(&info, &span, rope))
+}
+
+fn build_variable_hover_string(
+    stream_kind: &str,
+    variable_name: String,
+    type_str: String,
+    text: &str,
+    notes: Vec<&str>,
+) -> String {
+    let mut result = format!(
+        "```dsrv\n{} {}{}\n```\n---\n{}",
+        stream_kind, variable_name, type_str, text
+    );
+
+    for note in notes {
+        result.push_str("\n\n");
+        result.push_str(note);
+    }
+
+    result
 }
 
 fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
@@ -556,6 +570,25 @@ fn create_hover_variable(s: &str, span: &Span, rope: &Rope) -> Hover {
             byte_to_pos(&rope, span.end as usize).unwrap_or_default(),
         )),
     }
+}
+
+fn create_degraded_variable_hover(
+    analysis: &Analysis,
+    variable: &VarName,
+    span: Span,
+    rope: &Rope,
+) -> Option<Hover> {
+    let documentation = stream_documentation(analysis, variable)?;
+
+    let info = build_variable_hover_string(
+        "stream",
+        variable.name(),
+        String::new(),
+        &documentation,
+        vec!["*The file does not parse, so no type is available.*"],
+    );
+
+    Some(create_hover_variable(&info, &span, rope))
 }
 
 fn role_to_symbol_kind(decl: &Declaration) -> SymbolKind {
@@ -1420,7 +1453,17 @@ mod test {
         assert!(valid_hover.is_some());
 
         backend.change(uri.clone(), invalid).await;
-        assert!(!backend.analysis_map.contains_key(&uri));
+
+        let analysis = Arc::clone(
+            backend
+                .analysis_map
+                .get(&uri)
+                .expect("the lexer-only analysis is kept")
+                .value(),
+        );
+        assert!(analysis.spec.is_none());
+        assert!(analysis.typed.is_none());
+
         assert!(
             backend
                 .provide_hover(HoverParams {
@@ -1432,19 +1475,26 @@ mod test {
                 })
                 .is_none()
         );
+
+        let completion = backend
+            .get_completion(CompletionParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: Position::new(2, 3),
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+                context: None,
+            })
+            .expect("completion is no longer refused outright");
+
         assert!(
-            backend
-                .get_completion(CompletionParams {
-                    text_document_position: TextDocumentPositionParams {
-                        text_document: TextDocumentIdentifier { uri: uri.clone() },
-                        position: Position::new(2, 3),
-                    },
-                    work_done_progress_params: Default::default(),
-                    partial_result_params: Default::default(),
-                    context: None,
-                })
-                .is_none()
+            completion
+                .iter()
+                .all(|item| item.label != "x" && item.label != "z"),
+            "{completion:?}"
         );
+
         assert_eq!(backend.document_map.get(&uri).unwrap().to_string(), invalid);
     }
 
@@ -1826,5 +1876,50 @@ mod test {
             .expect("SIndex is a builtin")
             .documentation;
         assert!(!hover.contains(operator), "{hover}");
+    }
+
+    #[apply(async_test)]
+    async fn hover_shows_documentation_in_a_spec_that_does_not_parse() {
+        let text = "in reading: Int\n\
+                    /// The running total.\n\
+                    out total: Int\n\
+                    total = default(total[1], 0) +";
+
+        let hover = hover_text_at(text, "total = ")
+            .await
+            .expect("hover on definition of total");
+
+        assert!(hover.contains("The running total."), "{hover}");
+        assert!(hover.contains("stream total"), "{hover}");
+    }
+
+    #[apply(async_test)]
+    async fn hover_claims_no_type_in_a_spec_that_does_not_parse() {
+        let text = "in reading: Int\n\
+                    /// The running total.\n\
+                    out total: Int\n\
+                    total = default(total[1], 0) +";
+
+        let hover = hover_text_at(text, "total = ")
+            .await
+            .expect("hover on definition of total");
+
+        assert!(!hover.contains(": Int"), "{hover}");
+    }
+
+    #[apply(async_test)]
+    async fn hover_inside_an_expression_is_absent_while_the_spec_does_not_parse() {
+        let text = "in reading: Int\n\
+                    /// The running total.\n\
+                    out total: Int\n\
+                    total = default(total[1], 0) +";
+
+        assert!(hover_text_at(text, "total[1]").await.is_none());
+    }
+
+    #[apply(async_test)]
+    async fn hover_is_absent_for_an_undocumented_stream_that_does_not_parse() {
+        let text = "in reading: Int\nout total: Int\ntotal = default(total[1], 0) +";
+        assert!(hover_text_at(text, "total: Int").await.is_none());
     }
 }
